@@ -16,5 +16,3 @@ tmp/
 
 # Builds
 dist/
-
-docs/*.pdf
