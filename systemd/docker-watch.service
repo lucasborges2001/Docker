@@ -1,0 +1,40 @@
+[Unit]
+Description=Telegram Docker Watch
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=dockerwatch
+Group=dockerwatch
+SupplementaryGroups=docker
+ExecStart=/opt/docker-watch/docker-watch.sh
+TimeoutStartSec=240
+
+RuntimeDirectory=docker-watch
+RuntimeDirectoryMode=0750
+
+Restart=on-failure
+RestartSec=30
+
+# Hardening (necesita acceso a /var/run/docker.sock)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+UMask=0077
+SystemCallArchitectures=native
+SystemCallFilter=@system-service @network-io
+ReadWritePaths=/var/run/docker.sock
+
+[Install]
+WantedBy=multi-user.target
