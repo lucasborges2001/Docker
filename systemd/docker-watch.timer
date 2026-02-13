@@ -1,5 +1,5 @@
 [Unit]
-Description=Run Docker Watch periodically
+Description=LEGACY: Run Docker Watch periodically (deprecated)
 
 [Timer]
 OnBootSec=2m

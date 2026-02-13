@@ -1,23 +1,20 @@
 [Unit]
-Description=Telegram Docker Watch
+Description=Docker Watch (events -> Telegram)
 After=network-online.target docker.service
 Wants=network-online.target
 
 [Service]
-Type=oneshot
-User=dockerwatch
-Group=dockerwatch
+Type=simple
+User=dockwatch
+Group=dockwatch
 SupplementaryGroups=docker
+
 ExecStart=/opt/docker-watch/docker-watch.sh
-TimeoutStartSec=240
 
 RuntimeDirectory=docker-watch
 RuntimeDirectoryMode=0750
 
-Restart=on-failure
-RestartSec=30
-
-# Hardening (necesita acceso a /var/run/docker.sock)
+# Hardening baseline
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
@@ -28,13 +25,16 @@ ProtectControlGroups=true
 LockPersonality=true
 MemoryDenyWriteExecute=true
 RestrictSUIDSGID=true
-RestrictNamespaces=true
 RestrictRealtime=true
-RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
-UMask=0077
-SystemCallArchitectures=native
-SystemCallFilter=@system-service @network-io
-ReadWritePaths=/var/run/docker.sock
+RestrictNamespaces=true
+
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# En Ubuntu /var/run suele ser symlink de /run
+ReadWritePaths=/run/docker-watch /var/run/docker.sock /run/docker.sock
+
+Restart=always
+RestartSec=2
 
 [Install]
 WantedBy=multi-user.target

@@ -1,83 +1,84 @@
-# Docker Watch por Telegram (Ubuntu + systemd timer)
+# Docker Watch (events) + Heartbeat diario (Telegram)
 
-Watchdog operativo de Docker que envía notificaciones a Telegram.
+Este repo instala un watcher de Docker basado en **docker events** (die/unhealthy) y un **heartbeat diario** por Telegram.
 
-Principios:
-- **Observabilidad primero**: te avisa con contexto (estado + contenedores + status).
-- **Sin “auto-restart” por unhealthy**: si un healthcheck falla, **solo notifica**.
-- (Opcional) `RESTART_ON_STOP=true` reinicia únicamente contenedores STOPPED/EXITED, con cooldown anti-loop.
+## Qué instala
 
-> El PDF completo con el paso a paso está en `docs/Docker.pdf`.
+- **Watcher continuo**: `docker-watch.service`
+  - Escucha `docker events`
+  - Envía alertas por:
+    - `die`
+    - `health_status: unhealthy`
+  - Tiene:
+    - dedupe por TTL
+    - retry/backoff para Telegram
+    - auto-restart opcional con rate limit
+
+- **Heartbeat diario**: `docker-watch-heartbeat.timer`
+  - Envía un mensaje por día con:
+    - lista de contenedores monitoreados (running)
+    - subset unhealthy
+
+> El PDF de referencia está en `docs/Docker.pdf`.
 
 ## Requisitos
-- Ubuntu + systemd
-- Docker instalado (`docker` CLI + `docker.service`)
-- `curl`, `iproute2`, `util-linux` (flock)
 
-## Instalación rápida
+- Ubuntu con systemd
+- Docker instalado (socket en `/var/run/docker.sock`)
+- Paquetes recomendados: `curl`, `util-linux` (flock)
+
+## Instalación
 
 ```bash
-git clone <este-repo>
-cd docker-watch
 sudo ./scripts/install.sh
 sudo nano /opt/docker-watch/.env
-sudo systemctl start docker-watch.service
-journalctl -u docker-watch.service -b --no-pager
+sudo systemctl restart docker-watch.service
+sudo systemctl start docker-watch-heartbeat.service   # prueba inmediata
 ```
 
-El monitoreo periódico se ejecuta vía timer:
+## Filtrado por label (recomendado)
+
+En tus contenedores/compose agregá:
+
+```yaml
+labels:
+  dockwatch.monitor: "true"
+```
+
+Y en `/opt/docker-watch/.env`:
 
 ```bash
-systemctl status docker-watch.timer --no-pager
+MONITOR_LABEL_KEY="dockwatch.monitor"
+MONITOR_LABEL_VALUE="true"
 ```
 
-## Configuración (`/opt/docker-watch/.env`)
+## Tests rápidos
 
-Obligatorios:
-- `BOT_TOKEN`
-- `CHAT_ID`
+**die**
+```bash
+docker run --rm --name dw-test --label dockwatch.monitor=true alpine sh -c 'exit 1'
+```
 
-Opcionales:
-- `ALERTS_ONLY=true` (solo envía si hay alertas)
-- `IGNORE_CONTAINERS="db,redis,..."` (por nombre o id)
-- `ONLY_THIS_COMPOSE="mi_proyecto"` (filtra por label de compose)
-- `RESTART_ON_STOP=true` (solo STOPPED/EXITED; NO unhealthy)
-- `RESTART_COOLDOWN_SEC=600`
+**unhealthy**
+```bash
+docker run --name dw-hc -d --rm --label dockwatch.monitor=true   --health-cmd="sh -c 'exit 1'" --health-interval=5s --health-retries=1   alpine sleep 9999
+```
 
-## Frecuencia del timer
-Por defecto: cada 5 minutos (ver `systemd/docker-watch.timer`).
+## Logs
 
-## Troubleshooting
-- Logs:
-  ```bash
-  journalctl -u docker-watch.service -b --no-pager
-  ```
-- Verificar acceso al socket:
-  ```bash
-  ls -l /var/run/docker.sock
-  id dockerwatch
-  ```
-  Si no tiene acceso, reiniciá el servicio luego de agregar al grupo docker:
-  ```bash
-  sudo systemctl restart docker-watch.service
-  ```
+```bash
+journalctl -u docker-watch.service -f
+journalctl -u docker-watch-heartbeat.service -b --no-pager
+systemctl list-timers --all | grep docker-watch-heartbeat
+```
 
 ## Desinstalar
+
 ```bash
 sudo ./scripts/uninstall.sh
 ```
 
-## Estructura
+## Legacy timer (deprecated)
 
-```
-.
-├─ docker-watch.sh
-├─ .env.example
-├─ systemd/
-│  ├─ docker-watch.service
-│  └─ docker-watch.timer
-├─ scripts/
-│  ├─ install.sh
-│  └─ uninstall.sh
-└─ docs/Docker.pdf
-```
+Existe `systemd/docker-watch.timer` como referencia del modo “scan periódico”.
+**No se instala** por defecto (quedó solo como legacy).

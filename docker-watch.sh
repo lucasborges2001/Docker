@@ -1,302 +1,163 @@
-\
 #!/usr/bin/env bash
 set -euo pipefail
 
+# ------------------------------------------------------------
+# Docker Watch (event-based) -> Telegram
+# Installs to: /opt/docker-watch/docker-watch.sh
+# Config:       /opt/docker-watch/.env
+# State (TTL/locks): /run/docker-watch (systemd RuntimeDirectory)
+# ------------------------------------------------------------
+
 ENV_FILE="/opt/docker-watch/.env"
+RUNDIR="/run/docker-watch"
+LOCK_FILE="${RUNDIR}/lock"
+TTL_DIR="${RUNDIR}/ttl"
+RST_DIR="${RUNDIR}/restarts"
 
-log_ok()   { echo "DOCKER_WATCH_OK $*"; }
-log_fail() { echo "DOCKER_WATCH_FAIL $*"; }
-log_skip() { echo "DOCKER_WATCH_SKIP $*"; }
-
-retry_backoff() {
-  local tries="${1:-6}"; shift
-  local i=1 delay=1
-  while (( i <= tries )); do
-    if "$@"; then return 0; fi
-    sleep "$delay"
-    delay=$((delay*2)); (( delay > 24 )) && delay=24
-    i=$((i+1))
-  done
-  return 1
-}
-
-curl_quiet() { curl -fsS --max-time 7 "$@"; }
-
-escape_html() {
-  sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
-}
-
-emoji() {
-  [[ "${DOCKER_EMOJI:-true}" == "true" ]] || { echo ""; return; }
-  echo -n "$1"
-}
-
-send_telegram() {
-  local resp
-  resp="$(
-    curl -fsS --max-time 12 -X POST \
-      "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-      -d chat_id="${CHAT_ID}" \
-      -d parse_mode="HTML" \
-      -d disable_web_page_preview="true" \
-      --data-urlencode text="${MSG}"
-  )" || return 1
-  grep -q '"ok"[[:space:]]*:[[:space:]]*true' <<<"$resp"
-}
-
-net_ready() {
-  ip route get "${NET_CHECK_IP:-1.1.1.1}" >/dev/null 2>&1 || return 1
-  getent hosts "${NET_CHECK_DNS:-api.telegram.org}" >/dev/null 2>&1 || return 1
-}
-
-require_cmd() {
-  command -v "$1" >/dev/null 2>&1 || { log_fail "missing_cmd=$1"; exit 1; }
-}
-
-# --------------------------- Load env -------------------------------------
-
-if [[ ! -f "$ENV_FILE" ]]; then
-  log_fail "missing_env_file=$ENV_FILE"
-  exit 1
-fi
+mkdir -p "$RUNDIR" "$TTL_DIR" "$RST_DIR"
+chmod 0750 "$RUNDIR" "$TTL_DIR" "$RST_DIR" || true
 
 # shellcheck disable=SC1090
-set -a
 source "$ENV_FILE"
-set +a
 
 : "${BOT_TOKEN:?missing BOT_TOKEN in $ENV_FILE}"
 : "${CHAT_ID:?missing CHAT_ID in $ENV_FILE}"
-SERVER_LABEL="${SERVER_LABEL:-$(hostname)}"
 
-# ------------------------ Anti-duplicados ---------------------------------
+HOST="$(hostname -f 2>/dev/null || hostname)"
 
-RUNDIR="${DOCKER_WATCH_RUNDIR:-/run/docker-watch}"
-LOCK_TTL_SEC="${LOCK_TTL_SEC:-300}"
+send_telegram() {
+  local text="$1"
+  local url="https://api.telegram.org/bot${BOT_TOKEN}/sendMessage"
 
-if [[ ! -d "$RUNDIR" ]]; then
-  RUNDIR="/tmp/docker-watch"
-  mkdir -p "$RUNDIR"
-fi
-
-LOCK_FILE="${RUNDIR}/docker-watch.lock"
-STAMP_FILE="${RUNDIR}/docker-watch.stamp"
-NOW_EPOCH="$(date +%s)"
-
-exec 9>"$LOCK_FILE"
-if ! flock -n 9; then
-  log_skip "lock_busy"
-  exit 0
-fi
-
-if [[ -f "$STAMP_FILE" ]]; then
-  read -r last_epoch <"$STAMP_FILE" || true
-  last_epoch="${last_epoch:-0}"
-  if (( NOW_EPOCH - last_epoch < LOCK_TTL_SEC )); then
-    log_skip "within_ttl age=$((NOW_EPOCH-last_epoch))"
-    exit 0
-  fi
-fi
-
-# --------------------------- Prechecks ------------------------------------
-
-require_cmd awk
-require_cmd hostname
-require_cmd ip
-require_cmd curl
-require_cmd docker
-require_cmd flock
-require_cmd getent
-
-# ¿Docker daemon?
-if ! docker info >/dev/null 2>&1; then
-  MSG="$(
-    {
-      echo "<b>Docker Watch — ${SERVER_LABEL}</b>"
-      echo ""
-      echo "<b>Estado</b>"
-      echo "<pre>docker: $(emoji "🔴 ")DOWN</pre>"
-      echo "<pre>time : $(date -Is)</pre>"
-      echo ""
-      echo "<pre>hint : systemctl status docker</pre>"
-      echo "<pre>hint : journalctl -u docker -b</pre>"
-    } | escape_html
-  )"
-
-  if retry_backoff 10 net_ready && retry_backoff 6 send_telegram; then
-    printf '%s\n' "$NOW_EPOCH" >"$STAMP_FILE"
-    chmod 600 "$STAMP_FILE" 2>/dev/null || true
-    log_ok "sent docker_down"
-    exit 0
-  else
-    log_fail "send_failed docker_down"
-    exit 1
-  fi
-fi
-
-# --------------------------- Recolección ----------------------------------
-
-IGNORE="${IGNORE_CONTAINERS:-}"
-ONLY_PROJECT="${ONLY_THIS_COMPOSE:-}"
-RESTART_ON_STOP="${RESTART_ON_STOP:-false}"
-RESTART_COOLDOWN_SEC="${RESTART_COOLDOWN_SEC:-600}"
-
-in_csv() {
-  local csv="$1" item="$2"
-  [[ -z "$csv" ]] && return 1
-  IFS=',' read -ra parts <<<"$csv"
-  for p in "${parts[@]}"; do
-    p="${p#"${p%%[![:space:]]*}"}"; p="${p%"${p##*[![:space:]]}"}"
-    [[ "$p" == "$item" ]] && return 0
+  # retry/backoff exponencial
+  local attempt=1 max=6 sleep_s=1
+  while (( attempt <= max )); do
+    if curl -fsS --max-time 10       -d "chat_id=${CHAT_ID}"       --data-urlencode "text=${text}"       -d "disable_web_page_preview=true"       "$url" >/dev/null; then
+      return 0
+    fi
+    sleep "$sleep_s"
+    sleep_s=$(( sleep_s * 2 ))
+    attempt=$(( attempt + 1 ))
   done
   return 1
 }
 
-cooldown_ok() {
-  local key="$1"
-  local file="${RUNDIR}/restart_${key}.stamp"
-  local now="$NOW_EPOCH"
-  if [[ -f "$file" ]]; then
-    local last; last="$(cat "$file" 2>/dev/null || echo 0)"
-    if (( now - last < RESTART_COOLDOWN_SEC )); then
+ttl_ok() {
+  local key="$1" ttl="$2"
+  local f="$TTL_DIR/$key"
+  local now; now="$(date +%s)"
+  if [[ -f "$f" ]]; then
+    local last; last="$(cat "$f" 2>/dev/null || echo 0)"
+    if (( now - last < ttl )); then
       return 1
     fi
   fi
-  echo "$now" >"$file" 2>/dev/null || true
+  echo "$now" >"$f"
   return 0
 }
 
-FILTER_ARGS=()
-if [[ -n "$ONLY_PROJECT" ]]; then
-  FILTER_ARGS+=(--filter "label=com.docker.compose.project=${ONLY_PROJECT}")
-fi
+restart_allowed() {
+  local cid="$1"
+  local now; now="$(date +%s)"
 
-mapfile -t rows < <(docker ps -a "${FILTER_ARGS[@]}" --format '{{.ID}}|{{.Names}}|{{.State}}|{{.Status}}|{{.Image}}')
+  local cooldown="${RESTART_COOLDOWN_SEC:-120}"
+  local perhour="${RESTART_MAX_PER_HOUR:-3}"
 
-unhealthy=()
-stopped=()
-restarting=()
-dead=()
+  local f="$RST_DIR/$cid"
+  touch "$f"
 
-for r in "${rows[@]}"; do
-  IFS='|' read -r cid name state status image <<<"$r"
+  # conservar solo timestamps < 1h
+  awk -v now="$now" 'now-$1 < 3600 {print $1}' "$f" >"$f.tmp" || true
+  mv "$f.tmp" "$f"
 
-  if in_csv "$IGNORE" "$cid" || in_csv "$IGNORE" "$name"; then
-    continue
+  local count; count="$(wc -l <"$f" | tr -d ' ')"
+  local last=0
+  if [[ "$count" -gt 0 ]]; then
+    last="$(tail -n1 "$f" || echo 0)"
   fi
 
-  health=""
-  [[ "$status" == *"(unhealthy)"* ]] && health="unhealthy"
-  [[ "$status" == *"(healthy)"* ]] && health="healthy"
+  (( now - last < cooldown )) && return 1
+  (( count >= perhour )) && return 1
 
-  case "$state" in
-    running)
-      if [[ "${WARN_UNHEALTHY:-true}" == "true" && "$health" == "unhealthy" ]]; then
-        unhealthy+=("$name|$cid|$image|$status")
-      fi
-      ;;
-    exited|created)
-      stopped+=("$name|$cid|$image|$status")
-      ;;
-    restarting)
-      [[ "${WARN_RESTARTING:-true}" == "true" ]] && restarting+=("$name|$cid|$image|$status")
-      ;;
-    dead)
-      [[ "${WARN_DEAD:-true}" == "true" ]] && dead+=("$name|$cid|$image|$status")
-      ;;
-  esac
-done
-
-restart_actions=()
-if [[ "$RESTART_ON_STOP" == "true" && ${#stopped[@]} -gt 0 ]]; then
-  for s in "${stopped[@]}"; do
-    IFS='|' read -r name cid image status <<<"$s"
-    key="${cid:0:12}"
-    if cooldown_ok "$key"; then
-      if docker restart "$cid" >/dev/null 2>&1; then
-        restart_actions+=("$name|$cid|restarted")
-      else
-        restart_actions+=("$name|$cid|restart_failed")
-      fi
-    else
-      restart_actions+=("$name|$cid|cooldown_skip")
-    fi
-  done
-fi
-
-has_alerts="false"
-[[ ${#unhealthy[@]} -gt 0 ]] && has_alerts="true"
-[[ ${#stopped[@]} -gt 0 ]] && has_alerts="true"
-[[ ${#restarting[@]} -gt 0 ]] && has_alerts="true"
-[[ ${#dead[@]} -gt 0 ]] && has_alerts="true"
-
-if [[ "${ALERTS_ONLY:-false}" == "true" && "$has_alerts" != "true" ]]; then
-  log_skip "alerts_only_no_alerts"
-  exit 0
-fi
-
-running_cnt="$(docker ps "${FILTER_ARGS[@]}" --format '{{.ID}}' | wc -l | awk '{print $1}')"
-all_cnt="${#rows[@]}"
-
-fmt_list() {
-  local title="$1"; shift
-  local arr=("$@")
-  [[ ${#arr[@]} -eq 0 ]] && return 0
-  echo "<b>${title}</b>"
-  for x in "${arr[@]}"; do
-    IFS='|' read -r name cid image status <<<"$x"
-    echo "<pre>- ${name}  (${cid:0:12})</pre>"
-    echo "<pre>  img: ${image}</pre>"
-    echo "<pre>  st : ${status}</pre>"
-  done
-  echo ""
+  echo "$now" >>"$f"
+  return 0
 }
 
-fmt_actions() {
-  [[ ${#restart_actions[@]} -eq 0 ]] && return 0
-  echo "<b>Acciones (STOPPED)</b>"
-  for x in "${restart_actions[@]}"; do
-    IFS='|' read -r name cid action <<<"$x"
+# Single instance (evita 2 watchers a la vez)
+exec 9>"$LOCK_FILE"
+flock -n 9 || exit 0
+
+# Filtro por label (recomendado)
+LABEL_FILTER=()
+if [[ -n "${MONITOR_LABEL_KEY:-}" && -n "${MONITOR_LABEL_VALUE:-}" ]]; then
+  LABEL_FILTER+=(--filter "label=${MONITOR_LABEL_KEY}=${MONITOR_LABEL_VALUE}")
+fi
+
+# Eventos a escuchar
+EVENT_FILTERS=(--filter type=container --filter event=die --filter event=health_status)
+if [[ "${NOTIFY_START:-false}" == "true" ]]; then
+  EVENT_FILTERS+=(--filter event=start)
+fi
+
+# Incluimos exitCode (solo aplica para 'die'; en otros puede venir vacío)
+docker events "${EVENT_FILTERS[@]}" "${LABEL_FILTER[@]}"   --format '{{.Time}}|{{.Action}}|{{.Actor.ID}}|{{.Actor.Attributes.name}}|{{.Actor.Attributes.image}}|{{.Actor.Attributes.exitCode}}' | while IFS='|' read -r ts action cid name image exit_code; do
+
+    name="${name:-unknown}"
+    image="${image:-unknown}"
+    short_cid="${cid:0:12}"
+
+    # Docker suele emitir epoch en segundos. Convertimos a ISO si se puede.
+    when_iso="$(date -d "@${ts}" -Is 2>/dev/null || echo "${ts}")"
+
     case "$action" in
-      restarted)      a="$(emoji "🟢 ")restarted" ;;
-      restart_failed) a="$(emoji "🔴 ")restart_failed" ;;
-      cooldown_skip)  a="$(emoji "🟠 ")cooldown_skip" ;;
-      *)              a="$action" ;;
+      die)
+        ttl="${TTL_DIE_SEC:-300}"
+        key="die_${cid}"
+        if ttl_ok "$key" "$ttl"; then
+          msg="$(printf '🧯 Docker (%s)\ndie → %s\nimage: %s\ncid: %s\nexit: %s\n@ %s'             "$HOST" "$name" "$image" "$short_cid" "${exit_code:-?}" "$when_iso")"
+          send_telegram "$msg" || true
+
+          if [[ "${AUTO_RESTART_ON_DIE:-false}" == "true" ]]; then
+            # (opcional) filtro extra para auto-restart por label:
+            # AUTO_RESTART_LABEL_KEY / AUTO_RESTART_LABEL_VALUE
+            if [[ -n "${AUTO_RESTART_LABEL_KEY:-}" && -n "${AUTO_RESTART_LABEL_VALUE:-}" ]]; then
+              if [[ "$(docker inspect -f '{{ index .Config.Labels "'"${AUTO_RESTART_LABEL_KEY}"'" }}' "$cid" 2>/dev/null || true)" != "${AUTO_RESTART_LABEL_VALUE}" ]]; then
+                continue
+              fi
+            fi
+
+            if restart_allowed "$cid"; then
+              docker start "$cid" >/dev/null 2>&1 || true
+              msg="$(printf '🔁 Auto-restart (%s)\nstart → %s\ncid: %s\n@ %s'                 "$HOST" "$name" "$short_cid" "$when_iso")"
+              send_telegram "$msg" || true
+            else
+              msg="$(printf '⏳ Auto-restart bloqueado (%s)\n(rate-limit/cooldown) → %s\ncid: %s\n@ %s'                 "$HOST" "$name" "$short_cid" "$when_iso")"
+              send_telegram "$msg" || true
+            fi
+          fi
+        fi
+        ;;
+      health_status:unhealthy)
+        ttl="${TTL_UNHEALTHY_SEC:-600}"
+        key="unhealthy_${cid}"
+        if ttl_ok "$key" "$ttl"; then
+          msg="$(printf '🟠 Docker (%s)\nunhealthy → %s\nimage: %s\ncid: %s\n@ %s'             "$HOST" "$name" "$image" "$short_cid" "$when_iso")"
+          send_telegram "$msg" || true
+        fi
+        ;;
+      health_status:healthy)
+        if [[ "${NOTIFY_HEALTHY:-false}" == "true" ]]; then
+          msg="$(printf '🟢 Docker (%s)\nhealthy → %s\n@ %s'             "$HOST" "$name" "$when_iso")"
+          send_telegram "$msg" || true
+        fi
+        ;;
+      start)
+        ttl="${TTL_START_SEC:-600}"
+        key="start_${cid}"
+        if ttl_ok "$key" "$ttl"; then
+          msg="$(printf '▶️ Docker (%s)\nstart → %s\nimage: %s\n@ %s'             "$HOST" "$name" "$image" "$when_iso")"
+          send_telegram "$msg" || true
+        fi
+        ;;
     esac
-    echo "<pre>- ${name}  (${cid:0:12})  ${a}</pre>"
   done
-  echo ""
-}
-
-MSG="$(
-  {
-    echo "<b>Docker Watch — ${SERVER_LABEL}</b>"
-    echo "<pre>docker : $(emoji "🟢 ")OK</pre>"
-    echo "<pre>cnt    : ${running_cnt}/${all_cnt} running</pre>"
-    echo "<pre>time   : $(date -Is)</pre>"
-    echo ""
-    fmt_list "UNHEALTHY" "${unhealthy[@]}"
-    fmt_list "STOPPED/EXITED" "${stopped[@]}"
-    fmt_list "RESTARTING" "${restarting[@]}"
-    fmt_list "DEAD" "${dead[@]}"
-    fmt_actions
-    if [[ "$RESTART_ON_STOP" != "true" && ${#stopped[@]} -gt 0 ]]; then
-      echo "<pre>note: RESTART_ON_STOP=false (solo aviso)</pre>"
-    fi
-  } | escape_html
-)"
-
-if ! retry_backoff 10 net_ready; then
-  log_fail "net_not_ready"
-  exit 1
-fi
-
-if retry_backoff 6 send_telegram; then
-  printf '%s\n' "$NOW_EPOCH" >"$STAMP_FILE"
-  chmod 600 "$STAMP_FILE" 2>/dev/null || true
-  log_ok "sent alerts=$has_alerts"
-  exit 0
-else
-  log_fail "telegram_send_failed"
-  exit 1
-fi

@@ -1,0 +1,16 @@
+[Unit]
+Description=Docker Watch heartbeat (daily)
+
+[Service]
+Type=oneshot
+User=dockwatch
+Group=dockwatch
+SupplementaryGroups=docker
+ExecStart=/opt/docker-watch/heartbeat.sh
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/run/docker.sock /run/docker.sock
