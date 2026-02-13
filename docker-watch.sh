@@ -1,163 +1,196 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ------------------------------------------------------------
-# Docker Watch (event-based) -> Telegram
-# Installs to: /opt/docker-watch/docker-watch.sh
-# Config:       /opt/docker-watch/.env
-# State (TTL/locks): /run/docker-watch (systemd RuntimeDirectory)
-# ------------------------------------------------------------
+# =============================================================================
+# DOCKER WATCH
+# -----------------------------------------------------------------------------
+# Event-driven monitoring para entornos reales.
+#
+# Notifica únicamente eventos GRAVES:
+#   🔴 container die
+#   🔴 container stop (manual o inesperado)
+#   🟠 container unhealthy
+#   🔴 flapping (>=3 crashes en 5 min)
+#
+# No:
+#   - auto-restart
+#   - notifica start normales
+#   - notifica healthy
+#   - escucha exec events
+#
+# Requiere:
+#   /opt/docker-watch/.env
+#   BOT_TOKEN
+#   CHAT_ID
+#
+# Ejecutado como servicio systemd (persistente).
+# =============================================================================
+
+# -----------------------------
+# Configuración base
+# -----------------------------
 
 ENV_FILE="/opt/docker-watch/.env"
 RUNDIR="/run/docker-watch"
 LOCK_FILE="${RUNDIR}/lock"
-TTL_DIR="${RUNDIR}/ttl"
-RST_DIR="${RUNDIR}/restarts"
+FLAP_DIR="${RUNDIR}/flap"
 
-mkdir -p "$RUNDIR" "$TTL_DIR" "$RST_DIR"
-chmod 0750 "$RUNDIR" "$TTL_DIR" "$RST_DIR" || true
+mkdir -p "$RUNDIR" "$FLAP_DIR"
+chmod 0750 "$RUNDIR" "$FLAP_DIR" || true
 
 # shellcheck disable=SC1090
 source "$ENV_FILE"
 
-: "${BOT_TOKEN:?missing BOT_TOKEN in $ENV_FILE}"
-: "${CHAT_ID:?missing CHAT_ID in $ENV_FILE}"
+: "${BOT_TOKEN:?missing BOT_TOKEN}"
+: "${CHAT_ID:?missing CHAT_ID}"
 
+SERVER_LABEL="${SERVER_LABEL:-$(hostname)}"
 HOST="$(hostname -f 2>/dev/null || hostname)"
 
-send_telegram() {
-  local text="$1"
-  local url="https://api.telegram.org/bot${BOT_TOKEN}/sendMessage"
+# -----------------------------
+# Lock para evitar doble instancia
+# -----------------------------
 
-  # retry/backoff exponencial
-  local attempt=1 max=6 sleep_s=1
-  while (( attempt <= max )); do
-    if curl -fsS --max-time 10       -d "chat_id=${CHAT_ID}"       --data-urlencode "text=${text}"       -d "disable_web_page_preview=true"       "$url" >/dev/null; then
-      return 0
-    fi
-    sleep "$sleep_s"
-    sleep_s=$(( sleep_s * 2 ))
-    attempt=$(( attempt + 1 ))
-  done
-  return 1
-}
-
-ttl_ok() {
-  local key="$1" ttl="$2"
-  local f="$TTL_DIR/$key"
-  local now; now="$(date +%s)"
-  if [[ -f "$f" ]]; then
-    local last; last="$(cat "$f" 2>/dev/null || echo 0)"
-    if (( now - last < ttl )); then
-      return 1
-    fi
-  fi
-  echo "$now" >"$f"
-  return 0
-}
-
-restart_allowed() {
-  local cid="$1"
-  local now; now="$(date +%s)"
-
-  local cooldown="${RESTART_COOLDOWN_SEC:-120}"
-  local perhour="${RESTART_MAX_PER_HOUR:-3}"
-
-  local f="$RST_DIR/$cid"
-  touch "$f"
-
-  # conservar solo timestamps < 1h
-  awk -v now="$now" 'now-$1 < 3600 {print $1}' "$f" >"$f.tmp" || true
-  mv "$f.tmp" "$f"
-
-  local count; count="$(wc -l <"$f" | tr -d ' ')"
-  local last=0
-  if [[ "$count" -gt 0 ]]; then
-    last="$(tail -n1 "$f" || echo 0)"
-  fi
-
-  (( now - last < cooldown )) && return 1
-  (( count >= perhour )) && return 1
-
-  echo "$now" >>"$f"
-  return 0
-}
-
-# Single instance (evita 2 watchers a la vez)
 exec 9>"$LOCK_FILE"
 flock -n 9 || exit 0
 
+# -----------------------------
+# Envío robusto a Telegram
+# -----------------------------
+
+tg_send() {
+  local text="$1"
+
+  resp="$(curl -sS -w "\nHTTP_STATUS=%{http_code}\n" --max-time 10 \
+    -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+    -d "chat_id=${CHAT_ID}" \
+    -d "parse_mode=HTML" \
+    --data-urlencode "text=${text}" \
+    -d "disable_web_page_preview=true" || true)"
+
+  echo "$resp" | grep -q "HTTP_STATUS=200" && return 0
+
+  echo "Telegram error:" >&2
+  echo "$resp" >&2
+  return 1
+}
+
+# Escape básico HTML (evita errores de parse)
+esc() {
+  sed -e 's/&/\&amp;/g' \
+      -e 's/</\&lt;/g' \
+      -e 's/>/\&gt;/g'
+}
+
+# -----------------------------
+# Detección de flapping
+# -----------------------------
+# Consideramos flapping si:
+#   >= 3 eventos "die" en 300 segundos
+# -----------------------------
+
+check_flap() {
+  local cid="$1"
+  local now; now="$(date +%s)"
+  local file="$FLAP_DIR/$cid"
+
+  touch "$file"
+
+  # Mantener solo timestamps últimos 5 minutos
+  awk -v now="$now" 'now-$1 < 300 {print $1}' "$file" >"$file.tmp" || true
+  mv "$file.tmp" "$file"
+
+  echo "$now" >>"$file"
+
+  local count
+  count="$(wc -l <"$file" | tr -d ' ')"
+
+  if (( count >= 3 )); then
+    echo "FLAP"
+  fi
+}
+
+# -----------------------------
 # Filtro por label (recomendado)
+# -----------------------------
+
 LABEL_FILTER=()
 if [[ -n "${MONITOR_LABEL_KEY:-}" && -n "${MONITOR_LABEL_VALUE:-}" ]]; then
   LABEL_FILTER+=(--filter "label=${MONITOR_LABEL_KEY}=${MONITOR_LABEL_VALUE}")
 fi
 
-# Eventos a escuchar
-EVENT_FILTERS=(--filter type=container --filter event=die --filter event=health_status)
-if [[ "${NOTIFY_START:-false}" == "true" ]]; then
-  EVENT_FILTERS+=(--filter event=start)
-fi
+# -----------------------------
+# Eventos escuchados
+# Solo eventos graves
+# -----------------------------
 
-# Incluimos exitCode (solo aplica para 'die'; en otros puede venir vacío)
-docker events "${EVENT_FILTERS[@]}" "${LABEL_FILTER[@]}"   --format '{{.Time}}|{{.Action}}|{{.Actor.ID}}|{{.Actor.Attributes.name}}|{{.Actor.Attributes.image}}|{{.Actor.Attributes.exitCode}}' | while IFS='|' read -r ts action cid name image exit_code; do
+docker events \
+  --filter type=container \
+  --filter event=die \
+  --filter event=stop \
+  --filter event=health_status \
+  "${LABEL_FILTER[@]}" \
+  --format '{{.Time}}|{{.Action}}|{{.Actor.ID}}|{{.Actor.Attributes.name}}|{{.Actor.Attributes.image}}|{{.Actor.Attributes.exitCode}}' |
+while IFS='|' read -r ts action cid name image exit_code; do
 
-    name="${name:-unknown}"
-    image="${image:-unknown}"
-    short_cid="${cid:0:12}"
+  name="${name:-unknown}"
+  image="${image:-unknown}"
+  short_cid="${cid:0:12}"
+  when_iso="$(date -d "@${ts}" -Is 2>/dev/null || echo "${ts}")"
 
-    # Docker suele emitir epoch en segundos. Convertimos a ISO si se puede.
-    when_iso="$(date -d "@${ts}" -Is 2>/dev/null || echo "${ts}")"
+  case "$action" in
 
-    case "$action" in
-      die)
-        ttl="${TTL_DIE_SEC:-300}"
-        key="die_${cid}"
-        if ttl_ok "$key" "$ttl"; then
-          msg="$(printf '🧯 Docker (%s)\ndie → %s\nimage: %s\ncid: %s\nexit: %s\n@ %s'             "$HOST" "$name" "$image" "$short_cid" "${exit_code:-?}" "$when_iso")"
-          send_telegram "$msg" || true
+    # ---------------------------------------------------------
+    # 🔴 CONTAINER CRASH
+    # ---------------------------------------------------------
+    die)
+      flap="$(check_flap "$cid" || true)"
 
-          if [[ "${AUTO_RESTART_ON_DIE:-false}" == "true" ]]; then
-            # (opcional) filtro extra para auto-restart por label:
-            # AUTO_RESTART_LABEL_KEY / AUTO_RESTART_LABEL_VALUE
-            if [[ -n "${AUTO_RESTART_LABEL_KEY:-}" && -n "${AUTO_RESTART_LABEL_VALUE:-}" ]]; then
-              if [[ "$(docker inspect -f '{{ index .Config.Labels "'"${AUTO_RESTART_LABEL_KEY}"'" }}' "$cid" 2>/dev/null || true)" != "${AUTO_RESTART_LABEL_VALUE}" ]]; then
-                continue
-              fi
-            fi
+      MSG="<b>🔴 CONTAINER CRASH</b>
+🏷️ <b>$(printf "%s" "$SERVER_LABEL" | esc)</b>
+🖥️ $(printf "%s" "$HOST" | esc)
+🕒 $(printf "%s" "$when_iso" | esc)
 
-            if restart_allowed "$cid"; then
-              docker start "$cid" >/dev/null 2>&1 || true
-              msg="$(printf '🔁 Auto-restart (%s)\nstart → %s\ncid: %s\n@ %s'                 "$HOST" "$name" "$short_cid" "$when_iso")"
-              send_telegram "$msg" || true
-            else
-              msg="$(printf '⏳ Auto-restart bloqueado (%s)\n(rate-limit/cooldown) → %s\ncid: %s\n@ %s'                 "$HOST" "$name" "$short_cid" "$when_iso")"
-              send_telegram "$msg" || true
-            fi
-          fi
-        fi
-        ;;
-      health_status:unhealthy)
-        ttl="${TTL_UNHEALTHY_SEC:-600}"
-        key="unhealthy_${cid}"
-        if ttl_ok "$key" "$ttl"; then
-          msg="$(printf '🟠 Docker (%s)\nunhealthy → %s\nimage: %s\ncid: %s\n@ %s'             "$HOST" "$name" "$image" "$short_cid" "$when_iso")"
-          send_telegram "$msg" || true
-        fi
-        ;;
-      health_status:healthy)
-        if [[ "${NOTIFY_HEALTHY:-false}" == "true" ]]; then
-          msg="$(printf '🟢 Docker (%s)\nhealthy → %s\n@ %s'             "$HOST" "$name" "$when_iso")"
-          send_telegram "$msg" || true
-        fi
-        ;;
-      start)
-        ttl="${TTL_START_SEC:-600}"
-        key="start_${cid}"
-        if ttl_ok "$key" "$ttl"; then
-          msg="$(printf '▶️ Docker (%s)\nstart → %s\nimage: %s\n@ %s'             "$HOST" "$name" "$image" "$when_iso")"
-          send_telegram "$msg" || true
-        fi
-        ;;
-    esac
-  done
+📦 <code>$(printf "%s" "$name" | esc)</code>
+🖼️ <code>$(printf "%s" "$image" | esc)</code>
+🚪 Exit: <b>${exit_code:-?}</b>"
+
+      if [[ "$flap" == "FLAP" ]]; then
+        MSG="${MSG}
+
+⚠️ <b>FLAPPING DETECTED (>=3 crashes en 5 min)</b>"
+      fi
+
+      tg_send "$MSG" || true
+      ;;
+
+    # ---------------------------------------------------------
+    # 🔴 CONTAINER STOPPED
+    # ---------------------------------------------------------
+    stop)
+      MSG="<b>🔴 CONTAINER STOPPED</b>
+🏷️ <b>$(printf "%s" "$SERVER_LABEL" | esc)</b>
+🖥️ $(printf "%s" "$HOST" | esc)
+🕒 $(printf "%s" "$when_iso" | esc)
+
+📦 <code>$(printf "%s" "$name" | esc)</code>"
+
+      tg_send "$MSG" || true
+      ;;
+
+    # ---------------------------------------------------------
+    # 🟠 UNHEALTHY
+    # ---------------------------------------------------------
+    health_status:unhealthy)
+      MSG="<b>🟠 CONTAINER UNHEALTHY</b>
+🏷️ <b>$(printf "%s" "$SERVER_LABEL" | esc)</b>
+🖥️ $(printf "%s" "$HOST" | esc)
+🕒 $(printf "%s" "$when_iso" | esc)
+
+📦 <code>$(printf "%s" "$name" | esc)</code>"
+
+      tg_send "$MSG" || true
+      ;;
+  esac
+
+done
