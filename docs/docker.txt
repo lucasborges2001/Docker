@@ -1,0 +1,100 @@
+Docker Watch por Telegram (events + heartbeat)
+
+Objetivo
+
+- Alertas inmediatas ante incidentes en contenedores Docker.
+- Estable: 1 alerta por incidente y silencio (sin spam).
+- Gate por label: SOLO contenedores etiquetados.
+- Sin mensaje de recuperación (cierre silencioso).
+
+------------------------------------------------------------
+
+Componentes
+
+1) docker-watch.service (daemon)
+- Escucha `docker events`.
+- Dispara alertas por:
+  - die
+  - health_status: unhealthy
+- Anti-spam por incidente:
+  - 1 mensaje por contenedor/incidente.
+  - si escala (unhealthy -> die) edita el MISMO mensaje.
+  - cierre silencioso:
+    - con healthcheck: al volver a healthy
+    - sin healthcheck: cuando está Up estable por >= RECOVERY_GRACE_SEC
+
+2) docker-watch-heartbeat.timer (diario)
+- Señal de vida + resumen (running/unhealthy/stopped) de monitoreados.
+- Anti-duplicados por día (tipo Boot).
+
+3) /var/log/docker-watch/events.jsonl
+- Auditoría local rotada por logrotate.
+
+------------------------------------------------------------
+
+Requisitos
+- Linux con systemd
+- Docker Engine + CLI disponible
+- curl, util-linux (flock)
+
+------------------------------------------------------------
+
+Instalación rápida (recomendada)
+
+1) sudo ./scripts/install.sh
+2) sudo nano /opt/docker-watch/.env
+3) sudo systemctl restart docker-watch.service
+4) Probar heartbeat: sudo systemctl start docker-watch-heartbeat.service
+
+------------------------------------------------------------
+
+Configuración (.env)
+
+- BOT_TOKEN
+- CHAT_ID
+- MONITOR_LABEL="dockwatch.monitor=true"
+
+Anti-spam / estabilidad
+- RECOVERY_GRACE_SEC=300
+- TTL_DIE_SEC=1800
+- TTL_UNHEALTHY_SEC=3600
+- MAX_EDITS_PER_INCIDENT=1
+
+------------------------------------------------------------
+
+Etiquetar contenedores (docker compose)
+
+labels:
+  dockwatch.monitor: "true"
+
+------------------------------------------------------------
+
+Operación diaria
+
+Ver estado:
+  systemctl status docker-watch.service --no-pager
+  systemctl status docker-watch-heartbeat.timer --no-pager
+
+Ver logs:
+  journalctl -u docker-watch.service -n 200 --no-pager
+
+Auditoría JSONL:
+  sudo tail -n 50 /var/log/docker-watch/events.jsonl
+
+------------------------------------------------------------
+
+Pruebas
+
+Die:
+  docker run --rm --name dockwatch_dummy --label dockwatch.monitor=true alpine sh -c 'exit 12'
+
+Unhealthy:
+  docker run --name dw-hc -d --rm --label dockwatch.monitor=true \
+    --health-cmd="sh -c 'exit 1'" --health-interval=5s --health-retries=1 \
+    alpine sleep 9999
+
+------------------------------------------------------------
+
+Desinstalación
+
+sudo ./scripts/uninstall.sh

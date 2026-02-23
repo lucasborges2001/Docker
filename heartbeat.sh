@@ -1,129 +1,111 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# =============================================================================
-# DOCKER HEARTBEAT
-# -----------------------------------------------------------------------------
-# Verificación periódica del estado del entorno Docker.
-#
-# Detecta:
-#   🔴 Docker daemon caído
-#   🔴 docker-watch.service caído
-#   🔴 Contenedor esperado no running
-#   🟠 Contenedor unhealthy
-#
-# No envía reportes normales.
-# Solo alerta cuando hay problema real.
-#
-# Recomendado: ejecutar cada 5 o 10 minutos vía systemd timer.
-# =============================================================================
+BASE_DIR="/opt/docker-watch"
+source "${BASE_DIR}/.env"
+source "${BASE_DIR}/lib/telegram.sh"
 
-ENV_FILE="/opt/docker-watch/.env"
-source "$ENV_FILE"
+: "${MONITOR_LABEL:?Falta MONITOR_LABEL}"
 
-: "${BOT_TOKEN:?missing BOT_TOKEN}"
-: "${CHAT_ID:?missing CHAT_ID}"
+STATE_DIR="${DOCKER_WATCH_STATE_DIR:-/var/lib/docker-watch}"
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/docker-watch}"
 
-SERVER_LABEL="${SERVER_LABEL:-$(hostname)}"
-HOST="$(hostname -f 2>/dev/null || hostname)"
-DATE="$(date '+%Y-%m-%d %H:%M:%S %Z')"
+mkdir -p "${STATE_DIR}" "${RUNTIME_DIR}"
 
-# -----------------------------------------------------------------------------
-# Telegram sender robusto
-# -----------------------------------------------------------------------------
+# Lock + anti-duplicados diario (estilo Boot)
+exec 9>"${RUNTIME_DIR}/heartbeat.lock"
+flock -n 9 || { echo "SKIP: heartbeat ya corriendo" >&2; exit 0; }
 
-tg_send() {
-  local text="$1"
+STAMP_FILE="${STATE_DIR}/last_heartbeat_date"
+TODAY="$(date +%F)"
+HEARTBEAT_FORCE="${HEARTBEAT_FORCE:-false}"
 
-  resp="$(curl -sS -w "\nHTTP_STATUS=%{http_code}\n" --max-time 10 \
-    -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-    -d "chat_id=${CHAT_ID}" \
-    -d "parse_mode=HTML" \
-    --data-urlencode "text=${text}" \
-    -d "disable_web_page_preview=true" || true)"
-
-  echo "$resp" | grep -q "HTTP_STATUS=200" && return 0
-
-  echo "Telegram error:" >&2
-  echo "$resp" >&2
-  return 1
-}
-
-esc() {
-  sed -e 's/&/\&amp;/g' \
-      -e 's/</\&lt;/g' \
-      -e 's/>/\&gt;/g'
-}
-
-ALERTS=""
-
-# =============================================================================
-# 1️⃣ Verificar Docker daemon
-# =============================================================================
-
-if ! systemctl is-active --quiet docker; then
-  ALERTS="${ALERTS}
-🔴 <b>DOCKER DAEMON DOWN</b>"
+if [[ -f "$STAMP_FILE" ]] && [[ "$(cat "$STAMP_FILE" 2>/dev/null || true)" == "$TODAY" ]] && [[ "$HEARTBEAT_FORCE" != "true" ]]; then
+  echo "SKIP: heartbeat ya enviado hoy" >&2
+  exit 0
 fi
 
-# =============================================================================
-# 2️⃣ Verificar docker-watch.service
-# =============================================================================
+HOST="$(hostname)"
+TS="$(date '+%Y-%m-%d %H:%M:%S %z')"
 
-if ! systemctl is-active --quiet docker-watch.service; then
-  ALERTS="${ALERTS}
-🔴 <b>DOCKER WATCHER DOWN</b>"
-fi
+# Engine totals
+engine_running=$(docker ps --format '{{.Names}}' | wc -l)
+engine_total=$(docker ps -a --format '{{.Names}}' | wc -l)
+engine_exited=$((engine_total - engine_running))
 
-# =============================================================================
-# 3️⃣ Verificar contenedores monitoreados
-# =============================================================================
+# Monitoreados
+mon_total=$(docker ps -a --filter "label=${MONITOR_LABEL}" --format '{{.Names}}' | wc -l)
+mon_running=$(docker ps --filter "label=${MONITOR_LABEL}" --format '{{.Names}}' | wc -l)
+mon_unhealthy=$(docker ps --filter "label=${MONITOR_LABEL}" --filter "health=unhealthy" --format '{{.Names}}' | wc -l)
+mon_stopped=$((mon_total - mon_running))
 
-LABEL_FILTER=()
-if [[ -n "${MONITOR_LABEL_KEY:-}" && -n "${MONITOR_LABEL_VALUE:-}" ]]; then
-  LABEL_FILTER+=(--filter "label=${MONITOR_LABEL_KEY}=${MONITOR_LABEL_VALUE}")
-fi
+running_list=$(docker ps --filter "label=${MONITOR_LABEL}" --format '{{.Names}} — {{.Status}}')
+unhealthy_list=$(docker ps --filter "label=${MONITOR_LABEL}" --filter "health=unhealthy" --format '{{.Names}} — {{.Status}}')
+# stopped = NO "Up" (pero incluye "Exited" y "Created")
+stopped_list=$(docker ps -a --filter "label=${MONITOR_LABEL}" --format '{{.Names}} — {{.Status}}' | grep -v '^$' | grep -v '— Up' || true)
 
-# Lista de contenedores esperados (por label)
-EXPECTED="$(docker ps -a "${LABEL_FILTER[@]}" --format '{{.Names}}|{{.Status}}' 2>/dev/null || true)"
+# Top restarts
+TOPN="${HEARTBEAT_TOP_RESTARTERS:-3}"
+top_restarts=$(docker ps -a --filter "label=${MONITOR_LABEL}" --format '{{.Names}}' | while read -r c; do
+  [[ -z "$c" ]] && continue
+  rc=$(docker inspect -f '{{.RestartCount}}' "$c" 2>/dev/null || echo 0)
+  echo "$c — restarts: $rc"
+done | awk -F': ' '$2>0' | sort -t: -k2 -nr | head -n "$TOPN" )
 
-if [[ -n "${EXPECTED// }" ]]; then
-  while IFS='|' read -r name status; do
-    [[ -z "$name" ]] && continue
+# Mensaje
+msg="<b>💓 DOCKER HEARTBEAT</b>
+<i>${HOST} | ${TS}</i>
 
-    # Si no está running
-    if [[ "$status" != Up* ]]; then
-      ALERTS="${ALERTS}
-🔴 <b>CONTAINER NOT RUNNING</b>
-📦 <code>$(printf "%s" "$name" | esc)</code>
-Estado: $(printf "%s" "$status" | esc)"
-    fi
+<b>📦 Engine</b>
+• Running: ${engine_running} | Exited: ${engine_exited} | Total: ${engine_total}
 
-    # Unhealthy
-    if [[ "$status" == *"(unhealthy)"* ]]; then
-      ALERTS="${ALERTS}
-🟠 <b>CONTAINER UNHEALTHY</b>
-📦 <code>$(printf "%s" "$name" | esc)</code>"
-    fi
-
-  done <<< "$EXPECTED"
-fi
-
-# =============================================================================
-# 4️⃣ Enviar alerta si existe problema
-# =============================================================================
-
-if [[ -n "$ALERTS" ]]; then
-
-  MSG="<b>🚨 DOCKER ALERT</b>
-🏷️ <b>$(printf "%s" "$SERVER_LABEL" | esc)</b>
-🖥️ $(printf "%s" "$HOST" | esc)
-🕒 $(printf "%s" "$DATE" | esc)
-
-${ALERTS}
+<b>🏷 Monitoreados</b>
+• ✅ running: ${mon_running} • 🟠 unhealthy: ${mon_unhealthy} • 🔴 stopped: ${mon_stopped}
 "
 
-  tg_send "$MSG" || true
+if [[ -n "$running_list" ]]; then
+  msg="${msg}
+
+<b>✅ Running</b>
+<pre>$(tg_escape_html "$running_list")</pre>"
 fi
 
-exit 0
+if [[ -n "$unhealthy_list" ]]; then
+  msg="${msg}
+
+<b>🟠 Unhealthy</b>
+<pre>$(tg_escape_html "$unhealthy_list")</pre>"
+fi
+
+if [[ -n "$stopped_list" ]]; then
+  msg="${msg}
+
+<b>🔴 Stopped</b>
+<pre>$(tg_escape_html "$stopped_list")</pre>"
+fi
+
+if [[ -n "$top_restarts" ]]; then
+  msg="${msg}
+
+<b>🔁 Top restarters</b>
+<pre>$(tg_escape_html "$top_restarts")</pre>"
+fi
+
+msg="${msg}
+
+<b>🔎 Diagnóstico</b>
+<pre>systemctl status docker-watch.service --no-pager
+docker ps -a --filter label=${MONITOR_LABEL}</pre>
+"
+
+# Alerts-only (opcional)
+HEARTBEAT_ALERTS_ONLY="${HEARTBEAT_ALERTS_ONLY:-false}"
+if [[ "$HEARTBEAT_ALERTS_ONLY" == "true" ]] && (( mon_unhealthy == 0 )) && (( mon_stopped == 0 )); then
+  echo "SKIP: alerts-only y no hay issues" >&2
+  echo "$TODAY" >"$STAMP_FILE"
+  exit 0
+fi
+
+tg_send_message "$msg" >/dev/null
+
+echo "$TODAY" >"$STAMP_FILE"

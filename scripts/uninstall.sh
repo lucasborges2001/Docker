@@ -2,7 +2,6 @@
 set -euo pipefail
 
 APP_DIR="/opt/docker-watch"
-
 USER_NAME="dockwatch"
 
 WATCH_SERVICE="docker-watch.service"
@@ -23,10 +22,14 @@ rm -f "/etc/systemd/system/${HB_SERVICE}"
 rm -f "/etc/systemd/system/${HB_TIMER}"
 systemctl daemon-reload
 
+rm -f "/etc/logrotate.d/docker-watch"
 rm -rf "${APP_DIR}"
+rm -rf "/var/log/docker-watch"
+rm -rf "/var/lib/docker-watch"
+rm -rf "/run/docker-watch"
 
 if id -u "${USER_NAME}" >/dev/null 2>&1; then
   userdel "${USER_NAME}" 2>/dev/null || true
 fi
 
-echo "OK: removido."
+echo "OK: removido." 
