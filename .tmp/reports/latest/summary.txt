@@ -1,4 +1,0 @@
-Docker: Docker requiere atención
-Generated: 2026-06-20T19:12:18Z
-Containers: 0 running, 3 stopped, 2 unhealthy, 0 monitored
-Open incidents: 0

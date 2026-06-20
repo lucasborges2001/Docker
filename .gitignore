@@ -16,3 +16,7 @@ tmp/
 
 # Builds
 dist/
+
+# Runtime/test artifacts
+.tmp/
+dist/
