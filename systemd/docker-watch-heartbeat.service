@@ -1,27 +1,17 @@
 [Unit]
-Description=Docker Watch heartbeat (daily)
-After=network-online.target docker.service
+Description=Docker Watch heartbeat snapshot
+After=docker.service network-online.target
 Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=dockwatch
-Group=dockwatch
-SupplementaryGroups=docker
-
-Environment=XDG_RUNTIME_DIR=/run/docker-watch
-
-ExecStart=/opt/docker-watch/heartbeat.sh
-
-RuntimeDirectory=docker-watch
-RuntimeDirectoryMode=0750
-StateDirectory=docker-watch
-StateDirectoryMode=0750
-
+EnvironmentFile=-/opt/docker-watch/config/server.env
+EnvironmentFile=-/etc/docker-watch/docker-watch.env
+ExecStart=/opt/docker-watch/bin/docker-heartbeat
+User=root
+Group=root
 NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
+ProtectSystem=full
 ProtectHome=true
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-
-ReadWritePaths=/run/docker-watch /var/lib/docker-watch /var/run/docker.sock /run/docker.sock
+PrivateTmp=true
+ReadWritePaths=/var/lib/docker-watch /var/log/docker-watch /opt/docker-watch

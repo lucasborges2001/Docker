@@ -1,0 +1,1 @@
+<article class="card"><h2>Historial</h2><?php if(!$dockerHistory): ?><p class="muted">Sin historial persistido.</p><?php endif; ?><ul class="list"><?php foreach($dockerHistory as $x): ?><li><span><?= docker_h($x['generated_at']??'') ?></span><small><?= docker_h($x['status']['summary']??'') ?></small></li><?php endforeach; ?></ul></article>

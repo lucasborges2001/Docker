@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+DOCKER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+docker_resolve_base_dir_shell() {
+  if [[ -n "${BASE_DIR:-}" && -f "$BASE_DIR/lib/shell/env.sh" ]]; then printf '%s\n' "$BASE_DIR"; return 0; fi
+  local candidate parent; parent="$(cd "$DOCKER_DIR/.." 2>/dev/null && pwd)"
+  for candidate in "$DOCKER_DIR/../Base" "$parent/Base" "/opt/base"; do [[ -f "$candidate/lib/shell/env.sh" ]] && { printf '%s\n' "$candidate"; return 0; }; done
+  return 1
+}
+docker_load_base_and_module_shell() {
+  BASE_DIR="$(docker_resolve_base_dir_shell)" || { echo "Unable to resolve Base. Set BASE_DIR=/opt/base or keep Base next to Docker." >&2; exit 2; }
+  export BASE_DIR DOCKER_DIR
+  source "$BASE_DIR/lib/shell/env.sh"; source "$BASE_DIR/lib/shell/log.sh"; source "$BASE_DIR/lib/shell/json.sh"; source "$BASE_DIR/lib/shell/lock.sh"; source "$BASE_DIR/lib/shell/time.sh"; source "$BASE_DIR/lib/shell/telegram.sh"
+  source "$DOCKER_DIR/lib/shell/collect.sh"; source "$DOCKER_DIR/lib/shell/events.sh"; source "$DOCKER_DIR/lib/shell/incident.sh"; source "$DOCKER_DIR/lib/shell/render.sh"; source "$DOCKER_DIR/lib/shell/persist.sh"; source "$DOCKER_DIR/lib/shell/heartbeat.sh"
+  base_env_load_file "$DOCKER_DIR/.env"; base_env_load_file "$DOCKER_DIR/config/server.env"; base_env_load_file "/etc/docker-watch/docker-watch.env"
+}
+
+if [[ "${1:-}" == "--resolve-base" ]]; then docker_resolve_base_dir_shell; exit $?; fi
+docker_load_base_and_module_shell
+export DOCKER_WATCH_REPORTS_DIR="${DOCKER_WATCH_REPORTS_DIR:-$DOCKER_DIR/.tmp/reports}"; export DOCKER_WATCH_STATE_DIR="${DOCKER_WATCH_STATE_DIR:-$DOCKER_DIR/.tmp/state}"; export DOCKER_WATCH_EVENTS_LOG="${DOCKER_WATCH_EVENTS_LOG:-$DOCKER_DIR/.tmp/events.jsonl}"; export SEND_TELEGRAM=false; export HEARTBEAT_ONCE_PER_DAY=false
+rm -rf "$DOCKER_DIR/.tmp"; mkdir -p "$DOCKER_WATCH_REPORTS_DIR" "$DOCKER_WATCH_STATE_DIR"
+"$DOCKER_DIR/bin/docker-heartbeat" --no-telegram --force --reports-dir "$DOCKER_WATCH_REPORTS_DIR" --print >/dev/null
+printf '%s\n' '{"status":"die","id":"abc123","from":"alpine:latest","Actor":{"Attributes":{"name":"dw-test","dockwatch.monitor":"true"}}}' | "$DOCKER_DIR/bin/docker-watch" --stdin --no-telegram
+[[ -f "$DOCKER_WATCH_REPORTS_DIR/latest/report.json" && -s "$DOCKER_WATCH_EVENTS_LOG" ]]
+echo "docker-watch-test OK"

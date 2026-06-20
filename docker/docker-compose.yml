@@ -1,0 +1,7 @@
+services:
+  docker-watch-web-smoke:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    environment:
+      BASE_DIR: /base

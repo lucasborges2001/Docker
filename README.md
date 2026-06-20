@@ -1,100 +1,49 @@
-# Docker Watch (events) + Heartbeat diario (Telegram)
+# Docker Watch · Observabilidad Docker
 
-Este repo instala un watcher de Docker basado en **docker events** y un **heartbeat diario** por Telegram.
+`Docker` es un submódulo operativo para observar Docker desde servidor y web/SuperAdmin.
 
-## Objetivo
+Esta versión reemplaza el watcher aislado por una arquitectura dependiente de `Base`:
 
-- **Estable (sin spam):** 1 alerta por incidente y silencio.
-- **Gate por label:** solo monitorea contenedores etiquetados.
-- **Sin “RECUPERADO”:** cierra incidentes en silencio.
-- **Sin autorestart:** el watcher no reinicia contenedores.
+- `Base/lib/shell/*`: env, log, json, lock, time y Telegram reutilizable.
+- `Base/back/metrics/*`: contratos y lectura base de snapshots.
+- `Base/back/telegram/*`: escape/parseo/cliente Telegram reutilizable.
 
-## Qué instala
+`Docker` conserva solo lógica específica: `docker events`, gate por label, anti-spam por incidente, heartbeat, snapshots, events JSONL, APIs read-only y vista SuperAdmin.
 
-- **Watcher continuo**: `docker-watch.service`
-  - Escucha `docker events`
-  - Eventos soportados:
-    - `die`
-    - `health_status: unhealthy`
-  - Anti-spam:
-    - 1 alerta por incidente y contenedor
-    - si escala (unhealthy → die) **edita el mismo mensaje** (no manda uno nuevo)
-    - cierre silencioso del incidente:
-      - con healthcheck: al volver a `healthy`
-      - sin healthcheck: cuando está `Up` estable por `RECOVERY_GRACE_SEC`
-
-- **Heartbeat diario**: `docker-watch-heartbeat.timer`
-  - 1 mensaje por día con:
-    - engine totals
-    - monitoreados running/unhealthy/stopped
-    - top restarters
-  - Anti-duplicados diario (si se ejecuta 2 veces el mismo día, hace SKIP).
-
-- **Auditoría local (JSONL)**
-  - `/var/log/docker-watch/events.jsonl` (rotado por logrotate)
-
-## Requisitos
-
-- Ubuntu con systemd
-- Docker instalado (socket en `/var/run/docker.sock` o `/run/docker.sock`)
-- Paquetes: `curl`, `util-linux` (flock)
-
-## Instalación
+## Entrypoints
 
 ```bash
-sudo ./scripts/install.sh
-sudo nano /opt/docker-watch/.env
-sudo systemctl restart docker-watch.service
-sudo systemctl start docker-watch-heartbeat.service   # prueba inmediata
+bin/docker-watch
+bin/docker-heartbeat
+bin/docker-watch-test
 ```
 
-## Filtrado por label (recomendado)
+Wrappers legacy:
 
-En tus contenedores/compose agregá:
+```bash
+docker-watch.sh
+heartbeat.sh
+```
+
+## No autorestart
+
+El watcher no reinicia contenedores. Solo observa, registra y alerta.
+
+## MONITOR_LABEL
+
+```env
+MONITOR_LABEL=dockwatch.monitor=true
+```
+
+En Compose:
 
 ```yaml
 labels:
   dockwatch.monitor: "true"
 ```
 
-Y en `/opt/docker-watch/.env`:
+## Tests
 
 ```bash
-MONITOR_LABEL="dockwatch.monitor=true"
+BASE_DIR=../Base bash scripts/dev/smoke.sh
 ```
-
-## Tests rápidos
-
-**die**
-```bash
-docker run --rm --name dw-test --label dockwatch.monitor=true alpine sh -c 'exit 1'
-```
-
-**unhealthy**
-```bash
-docker run --name dw-hc -d --rm --label dockwatch.monitor=true \
-  --health-cmd="sh -c 'exit 1'" --health-interval=5s --health-retries=1 \
-  alpine sleep 9999
-```
-
-## Logs
-
-```bash
-journalctl -u docker-watch.service -f
-journalctl -u docker-watch-heartbeat.service -b --no-pager
-systemctl list-timers --all | grep docker-watch-heartbeat
-
-# Auditoría (JSONL)
-tail -n 50 /var/log/docker-watch/events.jsonl
-```
-
-## Desinstalar
-
-```bash
-sudo ./scripts/uninstall.sh
-```
-
-## Legacy timer (deprecated)
-
-Existe `systemd/docker-watch.timer` como referencia del modo “scan periódico”.
-**No se instala** por defecto.

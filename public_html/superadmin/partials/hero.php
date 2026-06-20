@@ -1,0 +1,1 @@
+<?php $sev=(string)($dockerHealth['severity']??'unknown'); ?><section class="hero"><div><p class="eyebrow">Submódulo de observabilidad</p><h1>Docker Watch</h1><p><?= docker_h($dockerHealth['summary'] ?? 'Sin estado') ?></p></div><span class="badge <?= docker_badge_class($sev) ?>"><?= docker_h($sev) ?></span></section>

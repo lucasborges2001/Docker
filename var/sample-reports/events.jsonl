@@ -1,0 +1,2 @@
+{"time":"2026-06-20T10:29:00-03:00","type":"watcher_start","severity":"info","container_id":null,"container_name":"docker-watch","image":null,"labels":{"dockwatch.monitor":"true"},"message":"Docker event: watcher_start","incident_key":"docker-watch:watcher_start"}
+{"time":"2026-06-20T10:30:00-03:00","type":"heartbeat","severity":"info","container_id":null,"container_name":"docker-heartbeat","image":null,"labels":{"dockwatch.monitor":"true"},"message":"Docker event: heartbeat","incident_key":"docker-heartbeat:heartbeat"}

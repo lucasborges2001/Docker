@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+DOCKER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+docker_resolve_base_dir_shell() {
+  if [[ -n "${BASE_DIR:-}" && -f "$BASE_DIR/lib/shell/env.sh" ]]; then printf '%s\n' "$BASE_DIR"; return 0; fi
+  local candidate parent; parent="$(cd "$DOCKER_DIR/.." 2>/dev/null && pwd)"
+  for candidate in "$DOCKER_DIR/../Base" "$parent/Base" "/opt/base"; do [[ -f "$candidate/lib/shell/env.sh" ]] && { printf '%s\n' "$candidate"; return 0; }; done
+  return 1
+}
+docker_load_base_and_module_shell() {
+  BASE_DIR="$(docker_resolve_base_dir_shell)" || { echo "Unable to resolve Base. Set BASE_DIR=/opt/base or keep Base next to Docker." >&2; exit 2; }
+  export BASE_DIR DOCKER_DIR
+  source "$BASE_DIR/lib/shell/env.sh"; source "$BASE_DIR/lib/shell/log.sh"; source "$BASE_DIR/lib/shell/json.sh"; source "$BASE_DIR/lib/shell/lock.sh"; source "$BASE_DIR/lib/shell/time.sh"; source "$BASE_DIR/lib/shell/telegram.sh"
+  source "$DOCKER_DIR/lib/shell/collect.sh"; source "$DOCKER_DIR/lib/shell/events.sh"; source "$DOCKER_DIR/lib/shell/incident.sh"; source "$DOCKER_DIR/lib/shell/render.sh"; source "$DOCKER_DIR/lib/shell/persist.sh"; source "$DOCKER_DIR/lib/shell/heartbeat.sh"
+  base_env_load_file "$DOCKER_DIR/.env"; base_env_load_file "$DOCKER_DIR/config/server.env"; base_env_load_file "/etc/docker-watch/docker-watch.env"
+}
+
+usage() { echo "Usage: docker-heartbeat [--env FILE] [--reports-dir DIR] [--no-telegram] [--print] [--force]"; }
+DOCKER_NO_TELEGRAM=false; DOCKER_PRINT=false; DOCKER_FORCE=false; DOCKER_EXTRA_ENV_FILE=""
+while [[ $# -gt 0 ]]; do case "$1" in --env) DOCKER_EXTRA_ENV_FILE="${2:?}"; shift 2;; --reports-dir) export DOCKER_WATCH_REPORTS_DIR="${2:?}"; shift 2;; --no-telegram) DOCKER_NO_TELEGRAM=true; shift;; --print) DOCKER_PRINT=true; shift;; --force) DOCKER_FORCE=true; shift;; -h|--help) usage; exit 0;; *) echo "Unknown argument: $1" >&2; exit 2;; esac; done
+docker_load_base_and_module_shell; [[ -n "$DOCKER_EXTRA_ENV_FILE" ]] && base_env_load_file "$DOCKER_EXTRA_ENV_FILE"
+[[ "$(base_env_bool HEARTBEAT_ENABLED true)" != true ]] && { base_log_info "Docker heartbeat disabled"; exit 0; }
+DOCKER_WATCH_REPORTS_DIR="${DOCKER_WATCH_REPORTS_DIR:-/var/lib/docker-watch/reports}"; DOCKER_WATCH_STATE_DIR="${DOCKER_WATCH_STATE_DIR:-/var/lib/docker-watch}"; DOCKER_WATCH_RETENTION_DAYS="${DOCKER_WATCH_RETENTION_DAYS:-14}"; [[ "$DOCKER_NO_TELEGRAM" == true ]] && SEND_TELEGRAM=false
+base_lock_acquire "$DOCKER_WATCH_STATE_DIR/docker-heartbeat.lock" 5 DOCKER_HEARTBEAT_LOCK_FD || exit 75; trap 'base_lock_release "${DOCKER_HEARTBEAT_LOCK_FD:-}"' EXIT
+[[ "$DOCKER_FORCE" != true ]] && ! docker_heartbeat_should_send_today && { base_log_info "Docker heartbeat already sent today; SKIP"; exit 0; }
+json="$(docker_heartbeat_build_snapshot)"; summary="$(docker_render_summary_text "$json")"; enabled="$(base_env_bool SEND_TELEGRAM true)"; ok=null; mid=null; err=""
+if [[ "$enabled" == true ]]; then set +e; response="$(docker_heartbeat_send "$json")"; code=$?; set -e; if [[ "$code" -eq 0 && "$(base_telegram_parse_ok "$response" 2>/dev/null || true)" == true ]]; then ok=true; mid="$(base_telegram_parse_message_id "$response" 2>/dev/null || echo null)"; else ok=false; err="$(base_telegram_parse_error_description "$response" 2>/dev/null || echo 'Telegram send failed')"; base_log_warn "Telegram heartbeat send failed: $err"; fi; fi
+json="$(docker_snapshot_set_telegram_result "$json" "$enabled" "$ok" "$mid" "$err")"; summary="$(docker_render_summary_text "$json")"; docker_persist_snapshot "$json" "$summary" "$DOCKER_WATCH_REPORTS_DIR"; docker_prune_old_reports "$DOCKER_WATCH_REPORTS_DIR" "$DOCKER_WATCH_RETENTION_DAYS"; docker_heartbeat_mark_sent
+event="$(docker_event_parse '{"status":"heartbeat","Actor":{"Attributes":{"name":"docker-heartbeat","dockwatch.monitor":"true"}}}')"; docker_persist_event "$event" "${DOCKER_WATCH_EVENTS_LOG:-/var/log/docker-watch/events.jsonl}"
+[[ "$DOCKER_PRINT" == true ]] && printf '%s\n' "$json" || base_log_info "Docker heartbeat generated"

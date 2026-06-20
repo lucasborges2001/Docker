@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -euo pipefail
+DOCKER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+docker_resolve_base_dir_shell() {
+  if [[ -n "${BASE_DIR:-}" && -f "$BASE_DIR/lib/shell/env.sh" ]]; then printf '%s\n' "$BASE_DIR"; return 0; fi
+  local candidate parent; parent="$(cd "$DOCKER_DIR/.." 2>/dev/null && pwd)"
+  for candidate in "$DOCKER_DIR/../Base" "$parent/Base" "/opt/base"; do [[ -f "$candidate/lib/shell/env.sh" ]] && { printf '%s\n' "$candidate"; return 0; }; done
+  return 1
+}
+docker_load_base_and_module_shell() {
+  BASE_DIR="$(docker_resolve_base_dir_shell)" || { echo "Unable to resolve Base. Set BASE_DIR=/opt/base or keep Base next to Docker." >&2; exit 2; }
+  export BASE_DIR DOCKER_DIR
+  source "$BASE_DIR/lib/shell/env.sh"; source "$BASE_DIR/lib/shell/log.sh"; source "$BASE_DIR/lib/shell/json.sh"; source "$BASE_DIR/lib/shell/lock.sh"; source "$BASE_DIR/lib/shell/time.sh"; source "$BASE_DIR/lib/shell/telegram.sh"
+  source "$DOCKER_DIR/lib/shell/collect.sh"; source "$DOCKER_DIR/lib/shell/events.sh"; source "$DOCKER_DIR/lib/shell/incident.sh"; source "$DOCKER_DIR/lib/shell/render.sh"; source "$DOCKER_DIR/lib/shell/persist.sh"; source "$DOCKER_DIR/lib/shell/heartbeat.sh"
+  base_env_load_file "$DOCKER_DIR/.env"; base_env_load_file "$DOCKER_DIR/config/server.env"; base_env_load_file "/etc/docker-watch/docker-watch.env"
+}
+
+usage() { echo "Usage: docker-watch [--env FILE] [--stdin] [--no-telegram]"; }
+STDIN=false; NO_TELEGRAM=false; EXTRA_ENV=""
+while [[ $# -gt 0 ]]; do case "$1" in --env) EXTRA_ENV="${2:?}"; shift 2;; --stdin) STDIN=true; shift;; --no-telegram) NO_TELEGRAM=true; shift;; -h|--help) usage; exit 0;; *) echo "Unknown argument: $1" >&2; exit 2;; esac; done
+docker_load_base_and_module_shell; [[ -n "$EXTRA_ENV" ]] && base_env_load_file "$EXTRA_ENV"
+[[ "$(base_env_bool DOCKER_WATCH_ENABLED true)" != true ]] && { base_log_info "Docker watcher disabled"; exit 0; }
+DOCKER_WATCH_STATE_DIR="${DOCKER_WATCH_STATE_DIR:-/var/lib/docker-watch}"; DOCKER_WATCH_EVENTS_LOG="${DOCKER_WATCH_EVENTS_LOG:-/var/log/docker-watch/events.jsonl}"; [[ "$NO_TELEGRAM" == true ]] && SEND_TELEGRAM=false
+process_event_line() {
+  local line="$1" event type key html response code
+  [[ -z "$line" ]] && return 0
+  event="$(docker_event_parse "$line")"; docker_event_should_monitor "$event" || return 0; docker_persist_event "$event" "$DOCKER_WATCH_EVENTS_LOG"
+  type="$(base_json_get_string "$event" type 2>/dev/null || echo unknown)"; key="$(docker_incident_key "$event")"
+  case "$type" in
+    die|"health_status: unhealthy"|unhealthy)
+      if docker_incident_is_open "$key"; then docker_incident_escalate "$key" "$event"; return 0; fi
+      docker_incident_open "$key" "$event"
+      if [[ "$(base_env_bool SEND_TELEGRAM true)" == true ]]; then html="$(docker_render_incident_telegram_html "$event")"; set +e; response="$(base_telegram_send_html "$html")"; code=$?; set -e; [[ "$code" -ne 0 ]] && base_log_warn "Telegram incident send failed: $(base_telegram_parse_error_description "$response" 2>/dev/null || echo unknown)"; fi
+      ;;
+    "health_status: healthy"|healthy|start) docker_incident_close_silent "${key%:healthy}:unhealthy" || true;;
+  esac
+}
+base_log_info "Docker watcher started"
+start="$(docker_event_parse '{"status":"watcher_start","Actor":{"Attributes":{"name":"docker-watch","dockwatch.monitor":"true"}}}')"; docker_persist_event "$start" "$DOCKER_WATCH_EVENTS_LOG"
+if [[ "$STDIN" == true ]]; then while IFS= read -r line; do process_event_line "$line"; done; else docker_events_stream | while IFS= read -r line; do process_event_line "$line"; done; fi
