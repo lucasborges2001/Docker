@@ -2,20 +2,30 @@
 
 ## Estado contractual
 
-`Docker` está integrado al host `Pruebas` como submódulo opcional de tooling local.
+`Docker` se integra a `Pruebas` como submódulo opcional de tooling local. No forma parte del deploy de aplicación y depende únicamente de `Base`.
 
-En `.gitmodules` debe existir:
+```text
+Boot = telemetría general del host
+Docker = engine, contenedores, recursos, eventos e incidentes Docker
+securityLab = señales defensivas e inventario autorizado
+Pruebas = wiring, panel agregado y smokes
+Base = helpers y contratos reutilizables
+```
 
-```txt
+## Declaración esperada en el host
+
+`.gitmodules`:
+
+```text
 [submodule "submodules/Docker"]
     path = submodules/Docker
     url = https://github.com/lucasborges2001/Docker.git
     branch = main
 ```
 
-En `config/submodules.php`, el contrato esperado es:
+`config/submodules.php`:
 
-```txt
+```text
 name: Docker
 path: submodules/Docker
 url: https://github.com/lucasborges2001/Docker.git
@@ -27,40 +37,29 @@ tooling: true
 optional: true
 ```
 
-## Interpretación
+## Responsabilidades de `Pruebas`
 
-`Docker` no bloquea el preflight general del host y no debe entrar en deploy de aplicación. Es tooling operativo local para servidor/desarrollo.
+- declarar y fijar el gitlink;
+- mantener Docker fuera del deploy de aplicación;
+- integrar mediante contratos públicos y adapters read-only;
+- agregar smokes de composición `Boot + Docker` sin copiar collectors;
+- no leer `libexec/`, `lib/shell/`, incidents o archivos internos directamente;
+- no ejecutar mutaciones Docker desde el panel agregado.
 
-## Responsabilidades del host `Pruebas`
+## Responsabilidades de `Docker`
 
-| Responsabilidad | Estado esperado |
-|---|---|
-| Declarar el submódulo en `.gitmodules`. | Requerido. |
-| Mantener clasificación como tooling opcional. | Requerido. |
-| No tratar `Docker` como módulo runtime de app. | Requerido. |
-| Ejecutar auditoría estructural cuando se audite el submódulo. | Recomendado. |
-| Evitar mezclar runtime artifacts de `Docker` con repo host. | Requerido. |
-| Mantener `Base` disponible para smokes y operación local. | Requerido para validar. |
+- resolver `Base` mediante `BASE_DIR`, vecindad o `/opt/base`;
+- mantener `bin/docker-watch`, `bin/docker-telemetry` y `bin/docker-heartbeat`;
+- recolectar únicamente señales propias del runtime Docker;
+- conservar snapshots, events JSONL e incidentes en rutas administradas;
+- exponer health, latest, history, events, resources y container detail read-only;
+- mantener fixtures sin daemon;
+- no autorestart;
+- no depender de `Boot`, `securityLab` o `Pruebas`.
 
-## Responsabilidades del submódulo `Docker`
+## Dependencia con `Base`
 
-| Responsabilidad | Estado esperado |
-|---|---|
-| Resolver `Base` por `BASE_DIR`, vecindad de submódulos o `/opt/base`. | Requerido. |
-| Mantener watcher y heartbeat como entrypoints explícitos. | Requerido. |
-| Exponer health/latest/history/events solo lectura. | Requerido. |
-| No ejecutar mutaciones Docker desde endpoints web. | Requerido. |
-| No reiniciar contenedores automáticamente. | Requerido. |
-| Mantener fixtures de reportes para UI/smokes. | Recomendado. |
-| Documentar cualquier acción destructiva manual en operación server, no en UI. | Requerido. |
-
-## Contrato de dependencia con `Base`
-
-`Docker` consume `Base` pero no debe duplicar helpers comunes.
-
-Dependencias esperadas:
-
-```txt
+```text
 Base/lib/shell/env.sh
 Base/lib/shell/log.sh
 Base/lib/shell/json.sh
@@ -71,108 +70,141 @@ Base/back/metrics/*
 Base/back/telegram/*
 ```
 
-Contrato práctico:
+Validación:
 
 ```bash
 cd submodules/Docker
 BASE_DIR=../Base bash scripts/dev/smoke.sh
 ```
 
-## Contrato web/API
+## Contrato de snapshot
 
-Los endpoints pueden devolver estado degradado cuando no hay snapshot real, pero deben hacerlo con JSON estable.
-
-Endpoints esperados:
-
-```txt
-public_html/api/health.php
-public_html/api/latest.php
-public_html/api/history.php
-public_html/api/events.php
-public_html/superadmin/api/latest.php
-public_html/superadmin/api/history.php
-public_html/superadmin/api/events.php
-public_html/superadmin/api/probe.php
-```
-
-Contrato futuro recomendado:
+Versión actual:
 
 ```json
 {
-  "ok": true,
-  "code": "docker.ok",
   "module": "docker",
-  "data": {},
-  "error": null
-}
-```
-
-Para errores:
-
-```json
-{
-  "ok": false,
-  "code": "docker.snapshot_missing",
-  "module": "docker",
-  "data": {},
-  "error": {
-    "message": "No existe snapshot Docker"
+  "schema_version": 2,
+  "schema_compatibility": {
+    "minimum": 1,
+    "current": 2,
+    "mode": "expand-only"
   }
 }
 ```
 
-## Contrato de seguridad
+Los campos v1 permanecen disponibles. Los consumidores deben aceptar versiones mayores o iguales a la mínima soportada y leer campos conocidos, no comparar estrictamente `schema_version === 1`.
 
-### Permitido
+`container_ref` es la identidad pública sanitizada. `instance_ref` identifica de forma opaca una instancia y cambia ante recreate; nunca se expone el container ID completo.
 
-- Leer reportes.
-- Leer eventos JSONL.
-- Mostrar status en SuperAdmin.
-- Enviar Telegram desde procesos server controlados.
-- Ejecutar smokes locales.
+## Contrato web/API
 
-### No permitido desde host/web por defecto
+Público:
 
-- Reiniciar contenedores.
-- Borrar contenedores, imágenes, redes o volúmenes.
-- Ejecutar `docker compose down`, `docker rm`, `docker rmi`, `docker system prune` desde UI/API.
-- Modificar `.env` o systemd desde SuperAdmin.
-- Exponer secretos Telegram o rutas sensibles sin sanitización.
+```text
+public_html/api/health.php
+public_html/api/latest.php
+public_html/api/history.php
+public_html/api/events.php
+public_html/api/resources.php
+public_html/api/container.php?container_ref=<ref>
+```
 
-## Smoke host recomendado
+SuperAdmin:
 
-Agregar en una fase posterior un smoke host que verifique:
+```text
+public_html/superadmin/api/latest.php
+public_html/superadmin/api/history.php
+public_html/superadmin/api/events.php
+public_html/superadmin/api/probe.php
+public_html/superadmin/api/resources.php
+public_html/superadmin/api/container.php?container_ref=<ref>
+```
 
-1. `.gitmodules` contiene `submodules/Docker`.
-2. `config/submodules.php` clasifica `Docker` como `tooling-local`, opcional y fuera de deploy.
-3. El submódulo contiene `bin/docker-watch`, `bin/docker-heartbeat` y `scripts/dev/smoke.sh`.
-4. No existen botones o endpoints web que ejecuten comandos destructivos.
-5. Las APIs devuelven JSON y no texto plano/HTML.
+Invariantes HTTP:
+
+- solo `GET`;
+- `405` y `Allow: GET` para otros métodos;
+- JSON UTF-8;
+- `Cache-Control: no-store`;
+- degradación explícita si no hay snapshot;
+- no se acepta un comando Docker por query, body o header.
+
+## Sanitización
+
+API y UI pueden exponer:
+
+- estado y versión del engine;
+- `socket_resolved`, nunca el path del socket;
+- refs sanitizadas;
+- estado, health, recursos y metadata Compose acotada;
+- agregados y tendencias.
+
+No pueden exponer:
+
+- env vars o secrets;
+- mounts;
+- labels completas;
+- inspect completo;
+- IDs Docker completos;
+- logs completos de contenedor.
+
+## Seguridad
+
+Permitido:
+
+- leer snapshots e historial;
+- leer eventos e incidentes;
+- mostrar recursos;
+- enviar Telegram desde procesos server controlados;
+- ejecutar smokes locales.
+
+No permitido desde host o web:
+
+```text
+docker start
+docker stop
+docker restart
+docker kill
+docker exec
+docker rm
+docker rmi
+docker system prune
+docker compose down
+```
+
+## Integración pendiente en `Pruebas`
+
+Después de publicar y validar Docker:
+
+1. actualizar el gitlink en una fase separada;
+2. verificar SHA anterior y nuevo;
+3. adaptar el panel agregado a contratos públicos;
+4. ejecutar smoke con fixture v2;
+5. verificar comportamiento sin daemon;
+6. comprobar que `Boot` y `Docker` no duplican ownership.
 
 ## Comandos de verificación
 
 ```bash
 cd ~/dev/Pruebas
-
-git status --short
+git status --short --branch
 git submodule status --recursive | grep 'submodules/Docker' || true
-
-grep -n 'submodules/Docker' .gitmodules
-grep -n "'name' => 'Docker'" -A14 config/submodules.php
-
 bash scripts/quality/audit_structure.sh submodules/Docker
 
 cd submodules/Docker
+find . -type f -name '*.php' -print0 | xargs -0 -n1 php -l
+python3 -m py_compile libexec/docker-telemetry-collector.py
 BASE_DIR=../Base bash scripts/dev/smoke.sh
 ```
 
 ## Criterio de cierre
 
-El contrato se considera sano cuando:
-
-- `Docker` sigue declarado como tooling opcional;
-- no bloquea deploy de app;
-- el smoke local pasa con `BASE_DIR=../Base`;
-- las APIs son read-only y devuelven contrato estable;
-- el auditor estructural no reporta errores documentales;
-- los warnings técnicos restantes están documentados como pendientes vivos.
+- `Docker` sigue siendo tooling opcional;
+- depende solo de `Base`;
+- snapshot v1 sigue normalizando;
+- snapshot v2 expone recursos sanitizados;
+- APIs y SuperAdmin son read-only;
+- no hay autorestart ni ejecución remota;
+- fixtures y smokes pasan;
+- `Pruebas` consume contratos públicos y valida la integración por separado.
