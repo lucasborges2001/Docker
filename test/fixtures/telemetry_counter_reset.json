@@ -1,0 +1,20 @@
+{
+  "metric": "network_rx_bytes_total",
+  "previous": {
+    "container_ref": "compose:demo/api/1",
+    "instance_ref": "instance:aaaaaaaaaaaaaaaa",
+    "sampled_at": "2026-07-24T15:14:00Z",
+    "value": 9000000
+  },
+  "current": {
+    "container_ref": "compose:demo/api/1",
+    "instance_ref": "instance:bbbbbbbbbbbbbbbb",
+    "sampled_at": "2026-07-24T15:15:00Z",
+    "value": 120000
+  },
+  "expected": {
+    "compatible": false,
+    "rate_bytes_per_second": null,
+    "reason": "instance_changed"
+  }
+}
