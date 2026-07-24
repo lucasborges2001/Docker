@@ -1,0 +1,14 @@
+{
+  "module": "docker",
+  "schema_version": 1,
+  "generated_at": "2026-06-20T10:30:00-03:00",
+  "server": {"hostname": "server-01"},
+  "status": {"overall": "ok", "severity": "ok", "summary": "Docker estable"},
+  "engine": {"available": true, "version": "27.x", "socket": "/var/run/docker.sock"},
+  "containers": {"total": 8, "running": 6, "stopped": 2, "unhealthy": 0, "monitored": 5},
+  "monitoring": {"label": "dockwatch.monitor=true", "watcher_running": true, "heartbeat_enabled": true},
+  "incidents": {"open": 0, "recent": []},
+  "top_restarters": [{"name": "api", "restart_count": 2}],
+  "telegram": {"enabled": true, "last_send_ok": true, "message_id": 123},
+  "artifacts": {"report_json": "/var/lib/docker-watch/reports/latest/report.json", "summary_txt": "/var/lib/docker-watch/reports/latest/summary.txt", "events_jsonl": "/var/log/docker-watch/events.jsonl"}
+}
