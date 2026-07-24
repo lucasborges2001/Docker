@@ -22,11 +22,14 @@ docker_load_base_and_module_shell; [[ -n "$EXTRA_ENV" ]] && base_env_load_file "
 DOCKER_WATCH_REPORTS_DIR="${DOCKER_WATCH_REPORTS_DIR:-/var/lib/docker-watch/reports}"; DOCKER_WATCH_STATE_DIR="${DOCKER_WATCH_STATE_DIR:-/var/lib/docker-watch}"
 interval="${DOCKER_TELEMETRY_INTERVAL_SECONDS:-60}"; [[ "$interval" =~ ^[0-9]+$ ]] || interval=60; (( interval < 5 )) && interval=5
 collect_once() {
-  local json summary
+  local json="" summary="" result=0
   base_lock_acquire "$DOCKER_WATCH_STATE_DIR/docker-telemetry.lock" 5 DOCKER_TELEMETRY_LOCK_FD || return 75
-  json="$(docker_collect_snapshot_json)"; summary="$(docker_render_summary_text "$json")"
-  docker_persist_snapshot "$json" "$summary" "$DOCKER_WATCH_REPORTS_DIR"; docker_prune_old_reports "$DOCKER_WATCH_REPORTS_DIR"
+  json="$(docker_collect_snapshot_json)" || result=$?
+  if (( result == 0 )); then summary="$(docker_render_summary_text "$json")" || result=$?; fi
+  if (( result == 0 )); then docker_persist_snapshot "$json" "$summary" "$DOCKER_WATCH_REPORTS_DIR" || result=$?; fi
+  if (( result == 0 )); then docker_prune_old_reports "$DOCKER_WATCH_REPORTS_DIR" || result=$?; fi
   base_lock_release "${DOCKER_TELEMETRY_LOCK_FD:-}"; DOCKER_TELEMETRY_LOCK_FD=""
+  (( result == 0 )) || return "$result"
   [[ "$PRINT" == true ]] && printf '%s\n' "$json" || base_log_info "Docker telemetry snapshot generated"
 }
 if [[ "$MODE" == once ]]; then collect_once; exit $?; fi
