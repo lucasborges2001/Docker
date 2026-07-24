@@ -17,7 +17,7 @@ final class DockerSnapshotNormalizer implements MetricSnapshotNormalizer
             ['engine'=>$this->sanitizeEngine($raw['engine'] ?? []),'containers'=>$this->sanitizeContainers($raw['containers'] ?? []),'aggregates'=>$this->sanitizeAggregates($raw['aggregates'] ?? []),'top_restarters'=>$this->sanitizeTop($raw['top_restarters'] ?? [], 'restart_count')],
             ['server'=>is_array($raw['server'] ?? null)?$raw['server']:[],'monitoring'=>$this->sanitizeMonitoring($raw['monitoring'] ?? []),'incidents'=>is_array($raw['incidents'] ?? null)?$raw['incidents']:[],'telegram'=>is_array($raw['telegram'] ?? null)?$raw['telegram']:[]],
             is_array($raw['artifacts'] ?? null) ? $raw['artifacts'] : [],
-            $raw
+            []
         );
     }
 
