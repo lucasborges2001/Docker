@@ -1,0 +1,50 @@
+{
+  "engine": {"available": true, "version": "27.5.1"},
+  "containers": [
+    {
+      "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "name": "demo-api-1",
+      "state": "running",
+      "status": "Up 15 minutes (healthy)",
+      "started_at": "2026-07-24T15:00:00Z",
+      "restart_count": 2,
+      "memory_limit_bytes": 536870912,
+      "labels": {
+        "com.docker.compose.project": "demo",
+        "com.docker.compose.service": "api",
+        "com.docker.compose.container-number": "1",
+        "secret.label": "must-not-leak"
+      },
+      "health": "healthy",
+      "stats": {
+        "cpu_percent": 12.5,
+        "memory_used_bytes": 134217728,
+        "memory_percent": 25,
+        "network_rx_bytes_total": 1200000,
+        "network_tx_bytes_total": 900000,
+        "block_read_bytes_total": 4096,
+        "block_write_bytes_total": 8192,
+        "pids": 14
+      }
+    },
+    {
+      "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "name": "worker primary",
+      "state": "running",
+      "status": "Up 5 minutes",
+      "started_at": "2026-07-24T15:10:00Z",
+      "restart_count": 0,
+      "memory_limit_bytes": 0,
+      "labels": {},
+      "stats": {
+        "cpu_percent": 3.25,
+        "memory_used_bytes": 67108864,
+        "network_rx_bytes_total": 300000,
+        "network_tx_bytes_total": 500000,
+        "block_read_bytes_total": 2048,
+        "block_write_bytes_total": 1024,
+        "pids": 5
+      }
+    }
+  ]
+}
