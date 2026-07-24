@@ -1,0 +1,23 @@
+[Unit]
+Description=Docker Watch container telemetry collector
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+EnvironmentFile=-/opt/docker-watch/config/server.env
+EnvironmentFile=-/etc/docker-watch/docker-watch.env
+ExecStart=/opt/docker-watch/bin/docker-telemetry --loop
+Restart=always
+RestartSec=5s
+User=root
+Group=root
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/docker-watch /var/log/docker-watch /opt/docker-watch
+
+[Install]
+WantedBy=multi-user.target
