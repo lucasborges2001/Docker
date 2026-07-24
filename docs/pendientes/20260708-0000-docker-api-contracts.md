@@ -1,71 +1,44 @@
 # Pendiente P1 — Docker API JSON contracts y method guards
 
-## Qué falta
+## Estado
 
-Endurecer los endpoints API públicos y de SuperAdmin para que tengan contrato HTTP/JSON explícito.
+**Parcialmente resuelto el 2026-07-24.**
 
-Rutas candidatas:
+La frontera HTTP read-only y la sanitización están implementadas. Permanece abierta únicamente la decisión de migrar a un envelope uniforme `ok/code/data/error` sin romper consumidores existentes.
 
-```txt
+## Implementado
+
+- `public_html/api/_common.php`;
+- helper común de SuperAdmin fortalecido;
+- solo método `GET`;
+- `405` con `Allow: GET`;
+- `Content-Type: application/json`;
+- `Cache-Control: no-store`;
+- `X-Content-Type-Options: nosniff`;
+- endpoints read-only para resources y container detail;
+- sanitización de socket, IDs, labels e inspect;
+- workflow que verifica sintaxis y ausencia de comandos mutantes en web/backend.
+
+Rutas cubiertas:
+
+```text
 public_html/api/health.php
 public_html/api/latest.php
 public_html/api/history.php
 public_html/api/events.php
+public_html/api/resources.php
+public_html/api/container.php
 public_html/superadmin/api/latest.php
 public_html/superadmin/api/history.php
 public_html/superadmin/api/events.php
 public_html/superadmin/api/probe.php
-public_html/superadmin/support/api.php
+public_html/superadmin/api/resources.php
+public_html/superadmin/api/container.php
 ```
 
-## Evidencia revisada
+## Decisión de compatibilidad
 
-El auditor reportó:
-
-- `API_COMMON_MISSING` en endpoints bajo `public_html/api` y `public_html/superadmin/api`;
-- `API_METHOD_GUARD_MISSING`;
-- `API_JSON_CONTRACT_WEAK` en endpoints de SuperAdmin;
-- headers PHP faltantes;
-- `declare(strict_types=1)` faltante en algunos endpoints SuperAdmin.
-
-Los endpoints revisados devuelven JSON, pero lo hacen de forma compacta y sin frontera HTTP común.
-
-## Riesgo si no se hace
-
-- Contratos difíciles de consumir desde front o host.
-- Status HTTP inconsistentes.
-- Métodos no permitidos sin `405` + `Allow`.
-- Errores visibles como HTML/texto si aparece una excepción o warning PHP.
-- Auditor estructural mantiene warnings en cascada.
-
-## Ruta sugerida
-
-### Fase A — helper común
-
-Crear:
-
-```txt
-public_html/api/_common.php
-```
-
-y/o fortalecer:
-
-```txt
-public_html/superadmin/support/api.php
-```
-
-Responsabilidades:
-
-- `declare(strict_types=1)`;
-- header JSON;
-- method guard;
-- función `docker_api_json_success()`;
-- función `docker_api_json_error()`;
-- shape estable.
-
-### Fase B — shape estable
-
-Formato recomendado:
+No se envolvieron las respuestas existentes obligatoriamente en:
 
 ```json
 {
@@ -77,46 +50,41 @@ Formato recomendado:
 }
 ```
 
-Errores:
+Cambiar `latest`, `history` y `events` a ese shape rompería consumidores actuales. La alternativa correcta es una de estas:
 
-```json
-{
-  "ok": false,
-  "code": "docker.snapshot_missing",
-  "module": "docker",
-  "data": {},
-  "error": {
-    "message": "No existe snapshot Docker"
-  }
-}
+1. endpoints `/v2/` con envelope;
+2. negociación explícita de versión;
+3. migración coordinada con `Pruebas` y consumidores inventariados.
+
+Hasta esa decisión, el contrato actual evoluciona expand-only.
+
+## Evidencia
+
+```text
+public_html/api/_common.php
+public_html/superadmin/support/api.php
+back/metrics/DockerSnapshotNormalizer.php
+.github/workflows/quality.yml
+test/php/DockerSnapshotNormalizerTest.php
 ```
 
-### Fase C — smokes
-
-Agregar tests que validen:
-
-- `GET` permitido;
-- `POST` devuelve `405` + `Allow: GET`;
-- JSON parseable;
-- claves `ok`, `code`, `module`, `data`, `error`;
-- fallback sin snapshot;
-- límite de `history/events` acotado.
-
-## Verificación reproducible
+## Validación reproducible
 
 ```bash
-cd ~/dev/Pruebas/submodules/Docker
-find public_html -name '*.php' -print0 | xargs -0 -n1 php -l
+find public_html -type f -name '*.php' -print0 | xargs -0 -n1 php -l
 BASE_DIR=../Base bash scripts/dev/smoke.sh
 
-cd ~/dev/Pruebas
-bash scripts/quality/audit_structure.sh submodules/Docker
+grep -RInE \
+  --include='*.php' --include='*.js' \
+  'docker[[:space:]]+(start|stop|restart|kill|exec|rm|rmi)|shell_exec|exec\(|system\(|passthru|proc_open|popen' \
+  public_html back || true
 ```
 
-## Criterio de cierre
+## Criterio de cierre restante
 
-- No aparecen `API_COMMON_MISSING`, `API_METHOD_GUARD_MISSING` ni `API_JSON_CONTRACT_WEAK` para endpoints Docker.
-- Smokes API pasan.
-- Todas las respuestas son JSON parseable.
-- Métodos no permitidos devuelven `405` con `Allow` correcto.
-- No se agregan acciones destructivas.
+- inventariar consumidores actuales;
+- decidir estrategia de versionado del envelope;
+- agregar smoke HTTP que ejecute GET y POST contra endpoints reales;
+- confirmar CI y smoke con `Base`.
+
+No se requieren cambios adicionales para la telemetría v2 ni para mantener la frontera read-only.
