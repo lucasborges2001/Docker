@@ -1,50 +1,87 @@
 {
   "module": "docker",
-  "schema_version": 1,
-  "generated_at": "2026-06-20T10:30:00-03:00",
-  "server": {
-    "hostname": "server-01"
-  },
-  "status": {
-    "overall": "ok",
-    "severity": "ok",
-    "summary": "Docker estable"
-  },
-  "engine": {
-    "available": true,
-    "version": "27.x",
-    "socket": "/var/run/docker.sock"
-  },
+  "schema_version": 2,
+  "schema_compatibility": {"minimum": 1, "current": 2, "mode": "expand-only"},
+  "generated_at": "2026-07-24T15:15:00Z",
+  "server": {"hostname": "server-01"},
+  "status": {"overall": "ok", "severity": "ok", "summary": "Docker estable"},
+  "engine": {"available": true, "version": "27.5.1", "socket": "/var/run/docker.sock", "socket_resolved": true},
   "containers": {
-    "total": 8,
-    "running": 6,
-    "stopped": 2,
+    "total": 2,
+    "running": 2,
+    "stopped": 0,
     "unhealthy": 0,
-    "monitored": 5
+    "monitored": 2,
+    "without_memory_limit": 1,
+    "without_healthcheck": 1,
+    "items": [
+      {
+        "container_ref": "compose:demo/api/1",
+        "instance_ref": "instance:ffe054fe7ae0cb6d",
+        "name": "demo-api-1",
+        "compose": {"project": "demo", "service": "api", "container_number": "1"},
+        "state": "running",
+        "health": "healthy",
+        "has_healthcheck": true,
+        "status": "Up 15 minutes (healthy)",
+        "cpu_percent": 12.5,
+        "memory_used_bytes": 134217728,
+        "memory_limit_bytes": 536870912,
+        "memory_percent": 25.0,
+        "network_rx_bytes_total": 1200000,
+        "network_tx_bytes_total": 900000,
+        "block_read_bytes_total": 4096,
+        "block_write_bytes_total": 8192,
+        "pids": 14,
+        "restart_count": 2,
+        "started_at": "2026-07-24T15:00:00Z",
+        "uptime_seconds": 900,
+        "sampled_at": "2026-07-24T15:15:00Z"
+      },
+      {
+        "container_ref": "name:worker-primary",
+        "instance_ref": "instance:a0fab1377f49a759",
+        "name": "worker-primary",
+        "compose": {"project": null, "service": null, "container_number": null},
+        "state": "running",
+        "health": null,
+        "has_healthcheck": false,
+        "status": "Up 5 minutes",
+        "cpu_percent": 3.25,
+        "memory_used_bytes": 67108864,
+        "memory_limit_bytes": null,
+        "memory_percent": null,
+        "network_rx_bytes_total": 300000,
+        "network_tx_bytes_total": 500000,
+        "block_read_bytes_total": 2048,
+        "block_write_bytes_total": 1024,
+        "pids": 5,
+        "restart_count": 0,
+        "started_at": "2026-07-24T15:10:00Z",
+        "uptime_seconds": 300,
+        "sampled_at": "2026-07-24T15:15:00Z"
+      }
+    ]
   },
-  "monitoring": {
-    "label": "dockwatch.monitor=true",
-    "watcher_running": true,
-    "heartbeat_enabled": true
+  "aggregates": {
+    "cpu_percent": 15.75,
+    "memory_used_bytes": 201326592,
+    "network_rx_bytes_total": 1500000,
+    "network_tx_bytes_total": 1400000,
+    "block_read_bytes_total": 6144,
+    "block_write_bytes_total": 9216,
+    "pids": 19,
+    "without_memory_limit": 1,
+    "without_healthcheck": 1,
+    "top_cpu": [{"container_ref": "compose:demo/api/1", "name": "demo-api-1", "cpu_percent": 12.5}],
+    "top_memory": [{"container_ref": "compose:demo/api/1", "name": "demo-api-1", "memory_used_bytes": 134217728}],
+    "top_network_rx": [{"container_ref": "compose:demo/api/1", "name": "demo-api-1", "network_rx_bytes_total": 1200000}],
+    "top_network_tx": [{"container_ref": "compose:demo/api/1", "name": "demo-api-1", "network_tx_bytes_total": 900000}],
+    "top_restarters": [{"container_ref": "compose:demo/api/1", "name": "demo-api-1", "restart_count": 2}]
   },
-  "incidents": {
-    "open": 0,
-    "recent": []
-  },
-  "top_restarters": [
-    {
-      "name": "api",
-      "restart_count": 2
-    }
-  ],
-  "telegram": {
-    "enabled": true,
-    "last_send_ok": true,
-    "message_id": 123
-  },
-  "artifacts": {
-    "report_json": "/var/lib/docker-watch/reports/latest/report.json",
-    "summary_txt": "/var/lib/docker-watch/reports/latest/summary.txt",
-    "events_jsonl": "/var/log/docker-watch/events.jsonl"
-  }
+  "monitoring": {"label": "dockwatch.monitor=true", "watcher_running": true, "heartbeat_enabled": true, "telemetry_enabled": true, "include_unlabeled": false, "interval_seconds": 60, "sampled_at": "2026-07-24T15:15:00Z", "errors": []},
+  "incidents": {"open": 0, "recent": []},
+  "top_restarters": [{"container_ref": "compose:demo/api/1", "name": "demo-api-1", "restart_count": 2}],
+  "telegram": {"enabled": true, "last_send_ok": true, "message_id": 123},
+  "artifacts": {"report_json": "/var/lib/docker-watch/reports/latest/report.json", "summary_txt": "/var/lib/docker-watch/reports/latest/summary.txt", "events_jsonl": "/var/log/docker-watch/events.jsonl"}
 }
