@@ -1,0 +1,54 @@
+name: Docker Quality
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-and-fixtures:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: PHP syntax
+        run: |
+          set -euo pipefail
+          find . -type f -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      - name: Bash syntax
+        run: |
+          set -euo pipefail
+          find . -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+          for file in bin/docker-watch bin/docker-heartbeat bin/docker-telemetry bin/docker-watch-test docker-watch.sh heartbeat.sh; do
+            test ! -f "$file" || bash -n "$file"
+          done
+
+      - name: Python syntax
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            libexec/docker-telemetry-collector.py \
+            libexec/docker-telemetry-runner.py
+
+      - name: Deterministic telemetry fixtures
+        run: bash test/shell/docker_telemetry_collector_test.sh
+
+      - name: Read-only web boundary
+        run: |
+          set -euo pipefail
+          if grep -RInE \
+            --include='*.php' --include='*.js' \
+            'docker[[:space:]]+(start|stop|restart|kill|exec|rm|rmi)|shell_exec|exec\(|system\(|passthru|proc_open|popen' \
+            public_html back; then
+            echo 'Forbidden Docker mutation or command execution found in web/backend boundary.' >&2
+            exit 1
+          fi
