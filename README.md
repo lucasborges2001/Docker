@@ -1,22 +1,21 @@
 # Docker Watch · Observabilidad Docker
 
-`Docker` es un submódulo operativo para observar Docker desde servidor y web/SuperAdmin.
+`Docker` es un submódulo operativo para observar el engine, eventos y recursos de contenedores desde servidor y SuperAdmin.
 
-Esta versión reemplaza el watcher aislado por una arquitectura dependiente de `Base`:
-
-- `Base/lib/shell/*`: env, log, json, lock, time y Telegram reutilizable.
-- `Base/back/metrics/*`: contratos y lectura base de snapshots.
-- `Base/back/telegram/*`: escape/parseo/cliente Telegram reutilizable.
-
-`Docker` conserva solo lógica específica: `docker events`, gate por label, anti-spam por incidente, heartbeat, snapshots, events JSONL, APIs read-only y vista SuperAdmin.
+Depende únicamente de `Base` para helpers shell, contratos de métricas y Telegram. Conserva dentro de su propio dominio la recolección Docker, snapshots, historial, events JSONL, incidentes y APIs read-only.
 
 ## Entrypoints
 
 ```bash
 bin/docker-watch
+bin/docker-telemetry
 bin/docker-heartbeat
 bin/docker-watch-test
 ```
+
+- `docker-watch`: observa eventos y mantiene incidentes; no reinicia contenedores.
+- `docker-telemetry`: genera snapshots de recursos una vez o en loop.
+- `docker-heartbeat`: genera el resumen diario y Telegram opcional.
 
 Wrappers legacy:
 
@@ -25,14 +24,13 @@ docker-watch.sh
 heartbeat.sh
 ```
 
-## No autorestart
+## Alcance de telemetría
 
-El watcher no reinicia contenedores. Solo observa, registra y alerta.
-
-## MONITOR_LABEL
+Por defecto solo se detalla un contenedor cuando cumple `MONITOR_LABEL`:
 
 ```env
 MONITOR_LABEL=dockwatch.monitor=true
+DOCKER_TELEMETRY_INCLUDE_UNLABELED=false
 ```
 
 En Compose:
@@ -42,8 +40,28 @@ labels:
   dockwatch.monitor: "true"
 ```
 
+Se recopilan CPU, memoria, network I/O, block I/O, PIDs, restart count, health, estado, uptime y metadatos Compose sanitizados. No se exponen env vars, mounts, labels completas, inspect completo ni IDs Docker públicos.
+
+## No autorestart
+
+El módulo observa, registra, resume y alerta. No ejecuta `start`, `stop`, `restart`, `kill`, `exec` ni `recreate` desde web.
+
+## Snapshot
+
+El contrato actual usa `schema_version=2` en modo expand-only y conserva los campos v1. Los consumidores deben aceptar `schema_version >= 1` y leer solo campos documentados.
+
 ## Tests
 
 ```bash
 BASE_DIR=../Base bash scripts/dev/smoke.sh
 ```
+
+Prueba sin daemon real:
+
+```bash
+python3 libexec/docker-telemetry-collector.py \
+  --fixture test/fixtures/telemetry_mixed.json \
+  | python3 -m json.tool >/dev/null
+```
+
+Documentación operativa: [`docs/operacion/docker-watch.md`](docs/operacion/docker-watch.md).
