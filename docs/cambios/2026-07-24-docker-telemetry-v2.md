@@ -70,17 +70,24 @@ Consolidar en Docker la telemetría del engine y sus contenedores, manteniendo e
 
 No se aplicó un envelope obligatorio `ok/code/data/error` a todos los endpoints porque eso cambiaría la forma actual de `latest`, `history` y `events`. Esa migración debe diseñarse como contrato versionado o endpoint nuevo.
 
-## Validaciones ejecutadas durante construcción
+## Validación final ejecutada localmente
+
+Se reconstruyeron los artefactos finales relevantes y se ejecutó:
 
 ```text
-python3 -m py_compile: PASS sobre collector inicial
+python3 -m py_compile collector + runner: PASS
+bash test/shell/docker_telemetry_collector_test.sh: PASS
 fixture telemetry_mixed: PASS
 fixture engine absent: PASS
-bash -n: PASS sobre drafts de collect/persist/telemetry
-php -l: PASS sobre drafts de contracts/normalizer/summary/service
+unión label/allowlist: PASS
+counter reset incompatible -> rate null: PASS
+bash -n collect.sh: PASS
+bash -n persist.sh: PASS
+bash -n bin/docker-telemetry: PASS
+php -l contracts/normalizer/summary/service: PASS
 ```
 
-El workflow versionado ejecuta las validaciones estáticas y fixtures sobre el checkout remoto.
+El workflow `.github/workflows/quality.yml` está versionado para ejecutar estas validaciones sobre GitHub. Su ejecución remota no fue confirmada desde el conector, por lo que no se declara CI verde.
 
 ## No verificado
 
@@ -89,6 +96,7 @@ El workflow versionado ejecuta las validaciones estáticas y fixtures sobre el c
 - Docker Desktop real;
 - instalación systemd real;
 - smoke completo `BASE_DIR=../Base bash scripts/dev/smoke.sh` sobre el HEAD remoto;
+- render HTTP real de SuperAdmin;
 - integración y panel agregado en `Pruebas`;
 - actualización del gitlink.
 
