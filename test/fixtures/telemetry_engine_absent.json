@@ -1,0 +1,5 @@
+{
+  "engine": {"available": false, "version": null},
+  "containers": [],
+  "errors": [{"code": "engine_unavailable"}]
+}
