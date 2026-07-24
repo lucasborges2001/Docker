@@ -12,15 +12,11 @@
 
 No recopila CPU, memoria, disco o red general del host. Eso pertenece a `Boot`. Tampoco incorpora señales defensivas de `securityLab` ni wiring del host `Pruebas`.
 
-## Dependencias
-
 ```text
 Docker -> Base
 Docker -X-> Boot
 Docker -X-> securityLab
 ```
-
-`Base` aporta helpers reutilizables de env, log, JSON, lock, tiempo, métricas y Telegram. La lógica Docker permanece en este repositorio.
 
 ## Procesos
 
@@ -30,15 +26,22 @@ bin/docker-telemetry  snapshots de recursos
 bin/docker-heartbeat  resumen diario y Telegram opcional
 ```
 
-El watcher y la telemetría nunca reinician contenedores.
+Ninguno reinicia contenedores.
 
-## Label y allowlist
+## Alcance: label o allowlist
 
-Alcance predeterminado:
+La selección para detalle aplica esta unión:
+
+```text
+contenedores detallados = MONITOR_LABEL ∪ DOCKER_TELEMETRY_ALLOWLIST
+```
+
+Configuración predeterminada:
 
 ```env
 MONITOR_LABEL=dockwatch.monitor=true
 DOCKER_TELEMETRY_INCLUDE_UNLABELED=false
+DOCKER_TELEMETRY_ALLOWLIST=
 ```
 
 Compose:
@@ -48,13 +51,13 @@ labels:
   dockwatch.monitor: "true"
 ```
 
-También puede aplicarse una allowlist adicional por nombre exacto:
+Una allowlist opcional agrega nombres exactos aunque no tengan el label:
 
 ```env
 DOCKER_TELEMETRY_ALLOWLIST=api,worker
 ```
 
-La allowlist restringe; no amplía el resultado del filtro por label salvo que `DOCKER_TELEMETRY_INCLUDE_UNLABELED=true` se habilite explícitamente.
+`DOCKER_TELEMETRY_INCLUDE_UNLABELED=true` amplía explícitamente el detalle a todos los contenedores, sujeto a `DOCKER_TELEMETRY_MAX_CONTAINERS`. Su valor predeterminado es `false`.
 
 ## Configuración
 
@@ -74,35 +77,35 @@ DOCKER_WATCH_EVENTS_RETENTION_FILES=5
 
 Todos los comandos contra Docker tienen timeout. Un fallo produce `monitoring.errors` y una salida degradada; no dispara comandos correctivos.
 
-## Recolección
+## Fuentes
 
-Orden efectivo del baseline:
+1. Docker CLI con salida JSON estructurada para `ps`, `inspect` y `stats`.
+2. `docker stats --no-stream --all` para recursos instantáneos y counters.
+3. Fixtures JSON para tests sin daemon real.
 
-1. Docker CLI con salida JSON estructurada para `ps`, `inspect` y `stats`;
-2. `docker stats --no-stream --all` para recursos instantáneos y counters;
-3. fixtures JSON para tests sin daemon real.
+cAdvisor queda como integración futura opcional y no es dependencia del core.
 
-cAdvisor queda como integración futura opcional. No es dependencia del core.
+## Ejecución
 
-### Ejecución única
+Muestra única desde un checkout:
 
 ```bash
 BASE_DIR=../Base \
 DOCKER_WATCH_REPORTS_DIR="$(mktemp -d)/reports" \
-bin/docker-telemetry --once --print \
+bash bin/docker-telemetry --once --print \
   | python3 -m json.tool >/dev/null
 ```
 
-### Servicio periódico
+Servicio instalado:
 
 ```bash
 sudo systemctl enable --now docker-watch-telemetry.service
 systemctl status docker-watch-telemetry.service --no-pager
 ```
 
-El proceso respeta `DOCKER_TELEMETRY_INTERVAL_SECONDS`, con mínimo de cinco segundos.
+El servicio no requiere que Docker esté activo para iniciar. Si el daemon no está disponible, persiste un snapshot degradado y continúa intentando en el intervalo configurado.
 
-## Contrato de identidad
+## Identidad
 
 ### `container_ref`
 
@@ -111,25 +114,19 @@ Identificador público sanitizado:
 - Compose: `compose:<project>/<service>/<container-number>`;
 - sin Compose: `name:<container-name-sanitized>`.
 
-Estabilidad:
-
-- es estable ante recreate cuando proyecto, servicio y número Compose se conservan;
-- cambia si cambia el nombre o la identidad Compose;
-- no contiene el container ID completo.
+Es estable ante recreate mientras se conserve la identidad Compose o el nombre. No contiene el container ID.
 
 ### `instance_ref`
 
-Hash opaco de la instancia Docker:
+Hash opaco de la instancia:
 
 ```text
 instance:<16 hex>
 ```
 
-Cambia cuando el contenedor es recreado. Permite determinar si dos counters pertenecen a la misma instancia sin exponer el ID Docker.
+Cambia al recrear el contenedor. Permite detectar resets de counters sin exponer el ID Docker.
 
 ## Snapshot `schema_version=2`
-
-La evolución es expand-only:
 
 ```json
 {
@@ -143,44 +140,48 @@ La evolución es expand-only:
 }
 ```
 
-Los campos v1 se conservan: `module`, `generated_at`, `server`, `status`, `engine`, contadores de `containers`, `monitoring`, `incidents`, `top_restarters`, `telegram` y `artifacts`.
+Se conservan los campos v1: `module`, `generated_at`, `server`, `status`, `engine`, contadores de `containers`, `monitoring`, `incidents`, `top_restarters`, `telegram` y `artifacts`.
 
-Los consumidores v1 deben aceptar `schema_version >= 1` y no exigir igualdad estricta con `1`.
+Los consumidores deben aceptar `schema_version >= 1` y leer campos conocidos; no deben exigir igualdad estricta con `1`.
 
 ## Semántica de métricas
 
-| Campo | Tipo | Unidad | Fuente | Null | Reinicio |
+| Campo | Tipo | Unidad | Fuente | Nullability | Reset |
 |---|---|---:|---|---|---|
-| `cpu_percent` | gauge | porcentaje | `docker stats` | Sí si stats no responde | No aplica |
+| `cpu_percent` | gauge | porcentaje | `docker stats` | Sí | No aplica |
 | `memory_used_bytes` | gauge | bytes | `docker stats` | Sí | No aplica |
-| `memory_limit_bytes` | gauge/config | bytes | `HostConfig.Memory` | Sí: sin límite explícito | Cambia con configuración/recreate |
-| `memory_percent` | gauge | porcentaje | stats o cálculo used/limit | Sí sin límite | No aplica |
-| `network_rx_bytes_total` | counter | bytes | `docker stats` | Sí | Se reinicia con nueva `instance_ref` o engine/runtime |
-| `network_tx_bytes_total` | counter | bytes | `docker stats` | Sí | Se reinicia con nueva `instance_ref` o engine/runtime |
-| `block_read_bytes_total` | counter | bytes | `docker stats` | Sí | Se reinicia con nueva `instance_ref` o engine/runtime |
-| `block_write_bytes_total` | counter | bytes | `docker stats` | Sí | Se reinicia con nueva `instance_ref` o engine/runtime |
+| `memory_limit_bytes` | gauge/config | bytes | `HostConfig.Memory` | Sí, sin límite | Cambio de configuración/recreate |
+| `memory_percent` | gauge | porcentaje | stats o cálculo | Sí, sin límite | No aplica |
+| `network_rx_bytes_total` | counter | bytes | `docker stats` | Sí | Nueva instancia o engine |
+| `network_tx_bytes_total` | counter | bytes | `docker stats` | Sí | Nueva instancia o engine |
+| `block_read_bytes_total` | counter | bytes | `docker stats` | Sí | Nueva instancia o engine |
+| `block_write_bytes_total` | counter | bytes | `docker stats` | Sí | Nueva instancia o engine |
 | `pids` | gauge | procesos | `docker stats` | Sí | No aplica |
-| `restart_count` | counter por instancia | reinicios | `docker inspect` | No, default 0 | Se reinicia al recrear el contenedor |
-| `uptime_seconds` | gauge derivado | segundos | `State.StartedAt` | Sí si no está running | Se reinicia al iniciar/recrear |
+| `restart_count` | counter por instancia | reinicios | `docker inspect` | No, default 0 | Recreate |
+| `uptime_seconds` | gauge derivado | segundos | `State.StartedAt` | Sí | Start/recreate |
 
-Cada item incluye `sampled_at`. Los agregados usan la misma muestra.
+Cada item contiene `sampled_at`. Los agregados pertenecen a la misma muestra.
 
-### Tasas
+## Tasas y counter reset
 
-No se almacenan tasas como dato primario en esta fase. Para calcular bytes/segundo:
+No se persisten tasas como métrica primaria. Para calcular bytes/segundo, dos muestras deben cumplir:
 
-1. ambas muestras deben tener el mismo `container_ref`;
-2. ambas deben tener la misma `instance_ref`;
-3. el segundo counter debe ser mayor o igual al primero;
-4. los timestamps deben ser válidos y crecientes.
+1. mismo `container_ref`;
+2. misma `instance_ref`;
+3. timestamp posterior;
+4. counter actual mayor o igual al anterior.
 
-Si cambia `instance_ref`, el counter disminuye o el engine se reinicia, la comparación es incompatible y la tasa debe ser `null`, no negativa.
+Si cambia `instance_ref`, disminuye el counter o cambia el engine, las muestras son incompatibles y la tasa debe ser `null`, nunca negativa.
+
+Fixture contractual:
+
+```text
+test/fixtures/telemetry_counter_reset.json
+```
 
 ## Agregados
 
-El snapshot incluye:
-
-- CPU sumada de contenedores monitoreados;
+- CPU total de contenedores monitoreados;
 - memoria usada total;
 - network RX/TX acumulado;
 - block read/write acumulado;
@@ -189,30 +190,28 @@ El snapshot incluye:
 - cantidad sin healthcheck;
 - top CPU, memoria, network RX/TX y restarters.
 
-La ausencia de healthcheck es informativa. No cambia por sí sola `status.severity`.
+La ausencia de healthcheck es informativa y no cambia por sí sola la severidad.
 
-## Datos sanitizados
+## Sanitización
 
-Permitidos en API/UI:
+Permitido en API/UI:
 
 - `container_ref` e `instance_ref` opaco;
 - nombre sanitizado;
 - proyecto, servicio y número Compose;
-- estado, health y recursos;
-- timestamps y uptime.
+- estado, health, recursos, timestamps y uptime.
 
-No permitidos:
+Prohibido:
 
-- env vars;
-- secrets;
+- env vars y secrets;
 - mounts;
 - labels completas;
 - inspect completo;
 - container ID completo;
-- socket Docker;
+- path del socket Docker;
 - logs completos del contenedor.
 
-El snapshot local puede resolver el path del socket para operar. `DockerSnapshotNormalizer` elimina el path en API y expone únicamente `socket_resolved`.
+El snapshot local puede resolver el socket. La normalización API expone solo `socket_resolved`. También elimina el `raw` anidado de `MetricSnapshot` para evitar fugas indirectas.
 
 ## Historial y retención
 
@@ -223,15 +222,13 @@ El snapshot local puede resolver el path del socket para operar. `DockerSnapshot
 <reports>/<YYYYMMDDTHHMMSSZ>/summary.txt
 ```
 
-El pruning solo considera directorios hijos con nombre timestamp dentro de `DOCKER_WATCH_REPORTS_DIR`. Aplica, en orden:
+El pruning solo considera hijos con nombre timestamp dentro de `DOCKER_WATCH_REPORTS_DIR` y aplica:
 
 1. antigüedad;
 2. cantidad máxima;
 3. tamaño total máximo.
 
-`latest/` no se elimina.
-
-Los eventos siguen en JSONL y rotan por tamaño con retención independiente. Snapshots, eventos e incidentes no se mezclan; se correlacionan por timestamp, `container_ref` e `instance_ref`.
+`latest/` no se elimina. Los eventos rotan por tamaño y cantidad en una política separada. Incidentes, eventos y snapshots se correlacionan por timestamp y refs; no se mezclan en un contrato único.
 
 ## APIs read-only
 
@@ -257,19 +254,19 @@ public_html/superadmin/api/resources.php
 public_html/superadmin/api/container.php?container_ref=<ref>
 ```
 
-Reglas:
+Invariantes:
 
 - solo `GET`;
-- otros métodos devuelven `405` y `Allow: GET`;
+- otros métodos: `405` y `Allow: GET`;
 - `Cache-Control: no-store`;
 - sin comandos recibidos por HTTP;
-- sin acciones start/stop/restart/kill/exec/recreate.
+- sin start, stop, restart, kill, exec o recreate.
 
-## Docker rootless y Docker Desktop
+## Rootless y Docker Desktop
 
-No se asume que `/var/run/docker.sock` exista. `DOCKER_BIN` y `DOCKER_SOCKET` pueden configurarse, pero el collector usa la CLI y el contexto Docker efectivo.
+No se asume `/var/run/docker.sock`. `DOCKER_BIN`, `DOCKER_SOCKET` y el contexto Docker pueden configurarse.
 
-En rootless o Docker Desktop deben verificarse:
+Verificación:
 
 ```bash
 docker context show
@@ -277,39 +274,33 @@ docker version --format '{{.Server.Version}}'
 docker stats --no-stream --all --format '{{json .}}'
 ```
 
-La instalación systemd incluida está orientada a Linux server. Docker Desktop debe ejecutar `bin/docker-telemetry --once` o un scheduler propio; no se instala systemd automáticamente allí.
+La unidad systemd está orientada a Linux server. En Docker Desktop debe usarse `bash bin/docker-telemetry --once` o un scheduler propio.
 
 ## Fixtures
 
 ```text
 test/fixtures/telemetry_mixed.json
 test/fixtures/telemetry_engine_absent.json
+test/fixtures/telemetry_counter_reset.json
 test/fixtures/snapshot_v1.json
 ```
 
-Cubren:
-
-- recursos y agregados;
-- contenedor sin límite;
-- contenedor sin healthcheck;
-- sanitización de labels e IDs;
-- engine ausente;
-- compatibilidad de snapshot v1.
-
-Un counter reset se detecta en integración comparando `instance_ref`; no se interpreta como tasa negativa.
+Cubren recursos, contenedor sin límite, ausencia de healthcheck, sanitización, engine ausente, unión label/allowlist, counter reset y compatibilidad v1.
 
 ## Validación
 
 ```bash
 find . -type f -name '*.php' -print0 | xargs -0 -n1 php -l
-python3 -m py_compile libexec/docker-telemetry-collector.py
+python3 -m py_compile \
+  libexec/docker-telemetry-collector.py \
+  libexec/docker-telemetry-runner.py
 BASE_DIR=../Base bash scripts/dev/smoke.sh
 ```
 
-Collector sin daemon:
+Fixture sin daemon:
 
 ```bash
-python3 libexec/docker-telemetry-collector.py \
+python3 libexec/docker-telemetry-runner.py \
   --fixture test/fixtures/telemetry_mixed.json \
   | python3 -m json.tool >/dev/null
 ```
@@ -322,17 +313,18 @@ grep -RInE 'docker (start|stop|restart|kill|exec)|shell_exec|exec\(|system\(|pas
 
 ## Integración con `Pruebas`
 
-El host debe consumir únicamente APIs, `DockerStatusService` o snapshots normalizados. No debe copiar collectors ni leer internals de `libexec/` o `lib/shell/`.
+El host debe consumir APIs, `DockerStatusService` o snapshots normalizados. No debe copiar collectors ni leer internals de `libexec/` o `lib/shell/`.
 
-La actualización del gitlink y los smokes `Boot + Docker` pertenecen a una fase separada en `Pruebas`.
+La actualización del gitlink y el smoke `Boot + Docker` pertenecen a una fase separada en `Pruebas`.
 
 ## Criterio de operación sana
 
 - watcher, telemetría y heartbeat tienen responsabilidades separadas;
 - no existe autorestart;
-- el detalle está limitado por label/allowlist;
-- `schema_version=1` sigue normalizando;
-- el socket y datos sensibles no aparecen en API/UI;
-- el historial está acotado;
-- los smokes pasan con fixtures sin daemon;
-- las acciones Docker no están expuestas por HTTP.
+- detalle limitado por `MONITOR_LABEL ∪ allowlist`;
+- snapshot v1 sigue normalizando;
+- snapshot v2 expone recursos sanitizados;
+- socket y datos sensibles no aparecen en API/UI;
+- historial y events están acotados;
+- smokes pasan con fixtures sin daemon;
+- no hay acciones Docker por HTTP.
