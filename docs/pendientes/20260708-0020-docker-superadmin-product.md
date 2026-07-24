@@ -1,112 +1,111 @@
 # Pendiente P2 — Docker SuperAdmin read-only productización
 
-## Qué falta
+## Estado
 
-Convertir la vista SuperAdmin de `Docker` en una pantalla de diagnóstico read-only más útil y alineada con el estilo de Base, sin agregar acciones destructivas.
+**Implementado el 2026-07-24. Pendiente de validación runtime con `Base`.**
 
-## Evidencia revisada
+## Implementado
 
-Estado actual observado:
+### Documentación local
 
-```txt
-public_html/superadmin/index.php
-public_html/superadmin/partials/*
+```text
+public_html/superadmin/dockerFront.md
+```
+
+Declara propósito, APIs, partials, datos permitidos/prohibidos, frontera read-only y comandos de validación.
+
+### UI read-only
+
+- estado del engine;
+- agregados de CPU, memoria, network, block I/O y PIDs;
+- conteos total/running/stopped/unhealthy/monitored;
+- cantidad sin límite de memoria y sin healthcheck;
+- tabla sanitizada por contenedor;
+- estado, health, restarts y uptime;
+- proyecto/servicio Compose;
+- tendencias desde snapshots históricos;
+- eventos, incidentes y Telegram sin secretos;
+- layout responsive;
+- sin formularios ni acciones Docker.
+
+### APIs
+
+```text
 public_html/superadmin/api/latest.php
 public_html/superadmin/api/history.php
 public_html/superadmin/api/events.php
 public_html/superadmin/api/probe.php
-public_html/superadmin/assets/docker-superadmin.js
+public_html/superadmin/api/resources.php
+public_html/superadmin/api/container.php
 ```
 
-El auditor marcó:
+Invariantes:
 
-- `MODULE_DOC_MISSING :: public_html/superadmin`;
-- headers PHP faltantes;
-- strict types faltantes;
-- wrappers sospechosos;
-- contratos JSON débiles;
-- JS sin header.
+- solo `GET`;
+- `405` con `Allow: GET`;
+- JSON;
+- `Cache-Control: no-store`;
+- sin CLI Docker desde HTTP.
 
-## Riesgo si no se hace
+### Calidad
 
-- Pantalla útil pero poco contractuada.
-- Warnings estructurales persistentes.
-- Riesgo de que futuras mejoras agreguen botones de mutación Docker sin contrato.
-- Menor valor de producto frente a otros módulos con SuperAdmin más robusto.
+`.github/workflows/quality.yml` verifica:
 
-## Ruta sugerida
+- sintaxis PHP, Bash y Python;
+- fixtures deterministas;
+- ausencia de comandos mutantes o ejecución arbitraria en `public_html` y `back`.
 
-### Fase A — documentación local del módulo web
+## Acciones prohibidas
 
-Agregar uno de estos documentos, según patrón que prefiera el auditor:
+No existen botones ni endpoints para:
 
-```txt
-public_html/superadmin/dockerFront.md
-```
-
-o equivalente aceptado por reglas.
-
-Debe declarar:
-
-- propósito;
-- rutas API consumidas;
-- componentes/partials;
-- frontera read-only;
-- acciones prohibidas;
-- smokes asociados.
-
-### Fase B — UI read-only útil
-
-Agregar sin mutación:
-
-- tarjetas de estado de engine;
-- contenedores monitoreados por label;
-- últimos eventos filtrables;
-- historial de snapshots;
-- estado de Telegram sin secretos;
-- paths sanitizados;
-- copia de comando de validación local;
-- badges de severidad.
-
-### Fase C — smokes UI/API
-
-Cubrir:
-
-- no hay formularios POST destructivos;
-- no aparecen tokens/comandos peligrosos en UI;
-- JS no ejecuta `fetch` hacia endpoints mutantes;
-- endpoints devuelven JSON estable;
-- fixtures sample permiten render sin Docker real.
-
-## Prohibido en esta fase
-
-No agregar botones para:
-
-```txt
-restart
+```text
+start
 stop
+restart
+kill
+exec
 rm
 rmi
 prune
+recreate
 compose down
 volume rm
 network rm
 ```
 
-## Verificación reproducible
+## Evidencia
 
-```bash
-cd ~/dev/Pruebas/submodules/Docker
-find public_html -name '*.php' -print0 | xargs -0 -n1 php -l
-BASE_DIR=../Base bash scripts/dev/smoke.sh
-
-grep -RIn "restart\|stop\|rm\|rmi\|prune\|compose down\|volume rm\|network rm" public_html || true
+```text
+public_html/superadmin/index.php
+public_html/superadmin/partials/metrics.php
+public_html/superadmin/partials/containers.php
+public_html/superadmin/partials/history.php
+public_html/superadmin/docker-superadmin.css
+public_html/superadmin/dockerFront.md
+public_html/superadmin/support/api.php
+var/sample-reports/latest/report.json
 ```
 
-## Criterio de cierre
+## Validación reproducible
 
-- Existe doc local para `public_html/superadmin`.
-- `MODULE_DOC_MISSING` desaparece.
-- La pantalla mejora diagnóstico sin acciones destructivas.
-- Las APIs asociadas tienen contrato estable.
-- Smokes UI/API pasan.
+```bash
+find public_html -type f -name '*.php' -print0 | xargs -0 -n1 php -l
+BASE_DIR=../Base bash scripts/dev/smoke.sh
+
+grep -RInE \
+  --include='*.php' --include='*.js' \
+  'docker[[:space:]]+(start|stop|restart|kill|exec|rm|rmi)|shell_exec|exec\(|system\(|passthru|proc_open|popen' \
+  public_html back || true
+```
+
+## Criterio de cierre restante
+
+Para marcarlo como validado, no como solo implementado:
+
+- confirmar el workflow remoto;
+- ejecutar smoke completo con `BASE_DIR=../Base`;
+- renderizar la pantalla con fixture v2;
+- comprobar respuesta degradada sin snapshot/daemon.
+
+No quedan funcionalidades de producto pendientes dentro del alcance read-only de telemetría v2.
