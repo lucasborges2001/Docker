@@ -51,6 +51,9 @@ jobs:
           php test/php/DockerPathsTest.php
           php test/php/DockerEventReaderTest.php
 
+      - name: Docker uninstall dry-run safety
+        run: bash test/shell/docker_uninstall_safety_test.sh
+
       - name: Docker server packaging contract
         run: bash test/shell/docker_server_package_contract_test.sh
 
