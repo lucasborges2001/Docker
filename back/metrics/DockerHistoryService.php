@@ -10,7 +10,7 @@ final class DockerHistoryService {
             if (basename(dirname($path)) === 'latest') continue;
             $raw = json_decode((string)file_get_contents($path), true);
             if (!is_array($raw)) continue;
-            $data = $this->normalizer->normalizeForApi($raw); $data['path'] = $path;
+            $data = $this->normalizer->normalizeForApi($raw);
             $items[] = ['mtime'=>filemtime($path) ?: 0, 'data'=>$data];
         }
         usort($items, static fn($a,$b) => $b['mtime'] <=> $a['mtime']);

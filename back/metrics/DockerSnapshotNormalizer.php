@@ -38,8 +38,8 @@ final class DockerSnapshotNormalizer implements MetricSnapshotNormalizer
             'incidents'=>is_array($raw['incidents'] ?? null)?$raw['incidents']:[],
             'top_restarters'=>$this->sanitizeTop($raw['top_restarters'] ?? ($aggregates['top_restarters'] ?? []), 'restart_count'),
             'telegram'=>is_array($raw['telegram'] ?? null)?$raw['telegram']:[],
-            'artifacts'=>$snapshot->artifacts(),
-            'base_snapshot'=>$snapshot->toArray(),
+            'artifacts'=>[],
+            'base_snapshot'=>array_replace($snapshot->toArray(), ['artifacts'=>[], 'raw'=>[]]),
         ];
     }
 
