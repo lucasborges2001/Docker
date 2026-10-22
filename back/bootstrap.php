@@ -51,6 +51,7 @@ foreach ([
     '/metrics/DockerSnapshotNormalizer.php',
     '/metrics/DockerSnapshotReader.php',
     '/metrics/DockerEventReader.php',
+    '/metrics/DockerHistoryFiles.php',
     '/metrics/DockerHistoryService.php',
     '/metrics/DockerStatusService.php',
     '/telegram/DockerTelegramFormatter.php',

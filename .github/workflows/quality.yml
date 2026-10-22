@@ -51,6 +51,9 @@ jobs:
       - name: Container trend pure contract
         run: php test/php/DockerTrendBuilderTest.php
 
+      - name: History file listing contract
+        run: php test/php/DockerHistoryFilesTest.php
+
       - name: PHP read-only API safety fixtures
         run: |
           set -euo pipefail

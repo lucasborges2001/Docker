@@ -1,19 +1,37 @@
 <?php
 declare(strict_types=1);
-final class DockerHistoryService {
-    private $reportsDir; private $normalizer;
-    public function __construct(?string $reportsDir = null, ?DockerSnapshotNormalizer $normalizer = null) { $this->reportsDir = $reportsDir ?: docker_reports_dir(); $this->normalizer = $normalizer ?: new DockerSnapshotNormalizer(); }
-    public function recent(int $limit = 10): array {
-        $limit = max(1, min(100, $limit)); if (!is_dir($this->reportsDir)) return [];
+
+final class DockerHistoryService
+{
+    private $reportsDir;
+    private $normalizer;
+
+    public function __construct(?string $reportsDir = null, ?DockerSnapshotNormalizer $normalizer = null)
+    {
+        $this->reportsDir = $reportsDir ?: docker_reports_dir();
+        $this->normalizer = $normalizer ?: new DockerSnapshotNormalizer();
+    }
+
+    public function recent(int $limit = 10): array
+    {
+        $limit = max(1, min(100, $limit));
         $items = [];
-        foreach (glob($this->reportsDir . '/*/report.json') ?: [] as $path) {
-            if (basename(dirname($path)) === 'latest') continue;
-            $raw = json_decode((string)file_get_contents($path), true);
-            if (!is_array($raw)) continue;
-            $data = $this->normalizer->normalizeForApi($raw);
-            $items[] = ['mtime'=>filemtime($path) ?: 0, 'data'=>$data];
+        foreach (DockerHistoryFiles::candidates($this->reportsDir) as $path) {
+            if (count($items) >= $limit) {
+                break;
+            }
+            // Reject unusually large files before decoding untrusted on-disk content.
+            $size = filesize($path);
+            if ($size === false || $size > 2 * 1024 * 1024) {
+                continue;
+            }
+            $content = @file_get_contents($path);
+            $raw = $content === false ? null : json_decode($content, true);
+            if (!is_array($raw) || ($raw['module'] ?? '') !== DOCKER_MODULE_NAME) {
+                continue;
+            }
+            $items[] = $this->normalizer->normalizeForApi($raw);
         }
-        usort($items, static fn($a,$b) => $b['mtime'] <=> $a['mtime']);
-        return array_map(static fn($x) => $x['data'], array_slice($items, 0, $limit));
+        return $items;
     }
 }
