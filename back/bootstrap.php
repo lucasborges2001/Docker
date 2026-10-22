@@ -46,6 +46,8 @@ foreach ([
     '/support/paths.php',
     '/support/config.php',
     '/metrics/DockerMetricSummary.php',
+    '/metrics/DockerCounterRate.php',
+    '/metrics/DockerTrendBuilder.php',
     '/metrics/DockerSnapshotNormalizer.php',
     '/metrics/DockerSnapshotReader.php',
     '/metrics/DockerEventReader.php',

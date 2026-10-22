@@ -8,5 +8,9 @@ final class DockerStatusService {
     public function health():array{$latest=$this->latest();if($latest===null)return ['ok'=>false,'module'=>DOCKER_MODULE_NAME,'severity'=>'unknown','summary'=>$this->reader->lastError()?:'No hay snapshot Docker disponible'];$severity=(string)($latest['status']['severity']??'unknown');return ['ok'=>in_array($severity,['ok','info'],true),'module'=>DOCKER_MODULE_NAME,'severity'=>$severity,'summary'=>(string)($latest['status']['summary']??''),'generated_at'=>(string)($latest['generated_at']??'')];}
     public function resources():array{$latest=$this->latest();if($latest===null)return ['available'=>false,'health'=>$this->health(),'aggregates'=>[],'containers'=>[]];return ['available'=>true,'generated_at'=>$latest['generated_at']??null,'status'=>$latest['status']??[],'aggregates'=>$latest['aggregates']??[],'containers'=>$latest['containers']??[],'monitoring'=>$latest['monitoring']??[]];}
     public function container(string $containerRef):?array{$resources=$this->resources();foreach(is_array($resources['containers']['items']??null)?$resources['containers']['items']:[] as $item){if(is_array($item)&&hash_equals((string)($item['container_ref']??''),$containerRef))return ['generated_at'=>$resources['generated_at']??null,'container'=>$item];}return null;}
+    public function containerTrend(string $containerRef, int $limit = 20): array {
+        $limit = max(1, min(50, $limit));
+        return DockerTrendBuilder::forContainer($this->history->recent($limit + 1), $containerRef, $limit);
+    }
     public function summary():array{$latest=$this->latest();return $latest===null?['available'=>false,'health'=>$this->health(),'events'=>$this->events(20),'history'=>[]]:['available'=>true,'health'=>$this->health(),'latest'=>$latest,'resources'=>$this->resources(),'events'=>$this->events(20),'history'=>$this->history->recent(5)];}
 }
