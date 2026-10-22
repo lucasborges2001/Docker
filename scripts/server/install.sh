@@ -5,8 +5,18 @@ INSTALL_DIR="${INSTALL_DIR:-/opt/docker-watch}"
 BASE_DIR="${BASE_DIR:-/opt/base}"
 [[ ! -d "$BASE_DIR" ]] && echo "WARN: Base not found at $BASE_DIR. Set BASE_DIR before running services." >&2
 command -v docker >/dev/null 2>&1 || echo "WARN: docker command not found. Watcher will degrade until Docker is installed." >&2
+# Refuse mutation of legacy watcher installations. Migration is explicit.
+SERVICE_FILE=/etc/systemd/system/docker-watch.service
+if [[ -e "$SERVICE_FILE" ]] && ! grep -Fxq 'ExecStart=/opt/docker-watch/bin/docker-watch' "$SERVICE_FILE"; then
+  echo "BLOCKED: legacy Docker watcher unit. Inspect and cut over explicitly." >&2
+  exit 2
+fi
+if [[ -e "$INSTALL_DIR/docker-watch.sh" ]] && [[ ! -e "$INSTALL_DIR/bin/docker-watch" ]]; then
+  echo "BLOCKED: legacy Docker Watch script without modern binary." >&2
+  exit 2
+fi
 mkdir -p "$INSTALL_DIR" /var/lib/docker-watch/reports /var/lib/docker-watch/incidents /var/log/docker-watch /etc/docker-watch
-rsync -a --delete --exclude='.git' --exclude='dist' "$SRC_DIR/" "$INSTALL_DIR/"
+rsync -a --exclude='.git' --exclude='dist' --exclude='config/server.env' "$SRC_DIR/" "$INSTALL_DIR/"
 [[ -f "$INSTALL_DIR/config/server.env" ]] || cp "$INSTALL_DIR/config/server.env.example" "$INSTALL_DIR/config/server.env"
 chmod +x "$INSTALL_DIR/bin/"* "$INSTALL_DIR/libexec/"* "$INSTALL_DIR/scripts/server/"*.sh "$INSTALL_DIR/scripts/web/"*.sh "$INSTALL_DIR/scripts/dev/"*.sh "$INSTALL_DIR/docker-watch.sh" "$INSTALL_DIR/heartbeat.sh"
 cp "$INSTALL_DIR/systemd/docker-watch.service" /etc/systemd/system/docker-watch.service

@@ -328,3 +328,30 @@ La actualización del gitlink y el smoke `Boot + Docker` pertenecen a una fase s
 - historial y events están acotados;
 - smokes pasan con fixtures sin daemon;
 - no hay acciones Docker por HTTP.
+
+## Instalación legacy y cutover seguro (2026-10)
+
+Doctor read-only:
+
+    python3 scripts/server/installation-doctor.py
+
+Inspecciona las unidades, binarios y el snapshot persistido v1/v2. Emite
+classification=LEGACY_OR_DRIFT / INCOMPLETE / CONTRACT_OK_DISK y
+runtime_verified=false. No consulta docker.sock, systemctl ni secrets.
+No equivale a una prueba real de ejecución de Docker.
+
+En el servidor observado el watcher anterior usa
+/opt/docker-watch/docker-watch.sh como usuario dockwatch, mientras
+docker-watch-telemetry.service todavía no existe. Es una instalación
+legacy distinta del contrato actual. El instalador nuevo bloquea unidades
+legacy y scripts viejos sin binario v2, no usa rsync --delete y preserva
+config/server.env existente. No instala ni activa nada automáticamente
+cuando se consulta el doctor.
+
+El cutover exige autorización operativa separada: inventario de dependencias,
+backup de unidades y config, usuario/grupo y permisos de Docker, aislamiento
+del watcher anterior, instalación de los binarios y unidades nuevos,
+activación explícita de docker-watch-telemetry.service, y verificación
+de report.json fresco en la ruta configurada. No usar el socket Docker
+desde PHP ni ejecutar instalaciones mediante HTTP. Rollback: restaurar
+unidad/script anterior con procedimiento autorizado y controlar alertas duplicadas.
