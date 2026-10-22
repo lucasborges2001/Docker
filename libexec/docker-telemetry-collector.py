@@ -113,9 +113,6 @@ def instance_ref(container_id: Any) -> str:
 
 
 def container_ref(name: Any, labels: dict[str, Any]) -> str:
-    writable_layer_bytes = parse_bytes(inspect.get("SizeRw") if "SizeRw" in inspect else record.get("writable_layer_bytes"))
-    rootfs_bytes = parse_bytes(inspect.get("SizeRootFs") if "SizeRootFs" in inspect else record.get("rootfs_bytes"))
-
     project = labels.get("com.docker.compose.project")
     service = labels.get("com.docker.compose.service")
     number = labels.get("com.docker.compose.container-number")
@@ -308,6 +305,9 @@ def normalize_record(record: dict[str, Any], sampled_at: dt.datetime) -> dict[st
         restart_count = max(0, int(restart_raw or 0))
     except (TypeError, ValueError):
         restart_count = 0
+
+    writable_layer_bytes = parse_bytes(inspect.get("SizeRw") if "SizeRw" in inspect else record.get("writable_layer_bytes"))
+    rootfs_bytes = parse_bytes(inspect.get("SizeRootFs") if "SizeRootFs" in inspect else record.get("rootfs_bytes"))
 
     project = labels.get("com.docker.compose.project")
     service = labels.get("com.docker.compose.service")
