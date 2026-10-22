@@ -355,3 +355,66 @@ activación explícita de docker-watch-telemetry.service, y verificación
 de report.json fresco en la ruta configurada. No usar el socket Docker
 desde PHP ni ejecutar instalaciones mediante HTTP. Rollback: restaurar
 unidad/script anterior con procedimiento autorizado y controlar alertas duplicadas.
+
+## Diagnóstico compacto antes y después del cutover (2026-10-22)
+
+El doctor existente de Docker diferencia **contrato en disco** de **comandos del runtime**:
+
+```bash
+# Read-only: no ejecuta docker, systemctl ni instala nada.
+python3 scripts/server/installation-doctor.py
+
+# Sólo tras el cutover autorizado, en el servidor y con el usuario correcto:
+python3 scripts/server/installation-doctor.py --runtime --timeout 10
+```
+
+El modo `--runtime` ejecuta exclusivamente `docker version`, `docker ps -a`,
+`docker stats --no-stream --all` y `systemctl is-active --quiet` para
+`docker-watch.service` y `docker-watch-telemetry.service`. Son comandos
+de lectura, con argv fijo y timeout individual; no se ejecutan sobre un root de
+fixtures (`--root` distinto de `/`). No hacen `inspect`, no prueban salud
+de la aplicación ni sustituyen un smoke con Docker real.
+
+El resultado siempre es JSON y contiene `classification`,
+`checks`, `runtime_verified` y, al pedirlo, `runtime.status` y
+`runtime.checks`. `CONTRACT_OK_DISK` **no implica** runtime PASS;
+`runtime_verified=true` indica sólo que estos cinco probes terminaron
+correctamente. Exit code 0 exige los contratos de disco y, si se solicitó,
+también los probes runtime. Código 1: diagnóstico incompleto o con fallos.
+Código 2: argumentos inválidos. Los errores se clasifican como
+`BINARY_MISSING`, `TIMEOUT`, `COMMAND_FAILED`,
+`PERMISSION_DENIED`, `INVALID_JSON`, `INACTIVE` o `EXEC_ERROR`,
+sin exponer stderr, secretos ni salidas originales.
+
+El doctor detecta `/opt/base/bin/base-script-timing.py` como
+`OPTIONAL_AVAILABLE` o `OPTIONAL_ABSENT`, **sin bloquear** la instalación:
+el Base fijado en `Pruebas` puede ser anterior a esta capacidad.
+No se duplica el medidor. Si el Base instalado realmente publica ese entrypoint,
+se puede medir un doctor autorizado y generar un informe compacto con el CLI
+reusable (el comando `run --execute` crea un archivo y ejecuta el doctor):
+
+```bash
+# Ejecutar sólo cuando el binario exista y se haya autorizado la prueba runtime.
+BASE_DIR=/opt/base
+EVIDENCE_DIR="$HOME/docker-watch-timing"
+mkdir -p "$EVIDENCE_DIR"
+python3 "$BASE_DIR/bin/base-script-timing.py" run --execute \
+  --run-id docker-check-01 --stage runtime-doctor --repo-sha UNKNOWN \
+  --scenario docker-observability --profile server --environment ubuntu \
+  --output "$EVIDENCE_DIR/docker-runtime.timing.json" \
+  -- python3 /opt/docker-watch/scripts/server/installation-doctor.py --runtime
+python3 "$BASE_DIR/bin/base-script-timing.py" report --directory "$EVIDENCE_DIR" --json
+```
+
+Sustituir `UNKNOWN` por el SHA realmente desplegado cuando esté verificado.
+El reporte de timing demuestra duración y exit code del doctor, **no la
+validación del producto**. Usar un archivo de evidencia nuevo por ejecución;
+la herramienta de Base no sobreescribe uno ya existente.
+
+En producción `DOCKER_WATCH_ALLOW_SAMPLE_REPORTS` debe quedar ausente o
+ser `false`. El valor explícito `true` es exclusivamente para fixtures
+de desarrollo: jamás usarlo para presentar estados sanos de un servidor sin
+snapshots reales. Las APIs de eventos publican una proyección sanitizada;
+`events.jsonl` permanece como artefacto operativo con datos originales
+y requiere permisos de lectura restringidos. Verificar la autenticación
+en el host/reverse proxy antes de exponer APIs.

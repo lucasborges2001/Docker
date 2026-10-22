@@ -14,8 +14,13 @@ BASE_DIR=../Base bash scripts/dev/smoke.sh
 ```bash
 sudo BASE_DIR=/opt/base bash scripts/server/install.sh
 sudo nano /opt/docker-watch/config/server.env
-sudo systemctl start docker-watch.service docker-watch-heartbeat.timer
+# Sólo después de inspeccionar y migrar una instalación legacy, si existe:
+sudo systemctl start docker-watch.service docker-watch-telemetry.service docker-watch-heartbeat.timer
 sudo systemctl start docker-watch-heartbeat.service
+
+# Diagnóstico: disk-only primero; probes reales opcionales luego del cutover:
+python3 scripts/server/installation-doctor.py
+python3 scripts/server/installation-doctor.py --runtime --timeout 10
 ```
 
 Convención elegida:
