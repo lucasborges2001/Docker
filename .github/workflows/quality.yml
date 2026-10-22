@@ -51,6 +51,9 @@ jobs:
           php test/php/DockerPathsTest.php
           php test/php/DockerEventReaderTest.php
 
+      - name: Docker installer static policy
+        run: bash test/shell/docker_install_policy_test.sh
+
       - name: Docker uninstall dry-run safety
         run: bash test/shell/docker_uninstall_safety_test.sh
 
