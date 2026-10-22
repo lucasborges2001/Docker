@@ -9,6 +9,10 @@ cp "$ROOT/scripts/server/package-server.sh" "$TMP/scripts/server/package-server.
 printf '#!/usr/bin/env bash\n' > "$TMP/bin/docker-telemetry"
 printf 'runner\n' > "$TMP/libexec/docker-telemetry-runner.py"
 printf 'collector\n' > "$TMP/libexec/docker-telemetry-collector.py"
+printf 'SECRET\n' > "$TMP/config/server.env"
+printf 'SECRET\n' > "$TMP/config/.env"
+mkdir -p "$TMP/libexec/__pycache__"
+printf 'bytecode\n' > "$TMP/libexec/__pycache__/collector.pyc"
 touch "$TMP/README-INSTALL.md" "$TMP/docker-watch.sh" "$TMP/heartbeat.sh"
 for folder in lib config systemd; do touch "$TMP/$folder/.test-fixture"; done
 bash "$TMP/scripts/server/package-server.sh" >/dev/null
@@ -23,5 +27,11 @@ for required in \
     echo "FAIL: server package lacks $required" >&2
     exit 1
   }
+done
+for forbidden in config/server.env config/.env libexec/__pycache__/collector.pyc; do
+  if grep -Fxq "$forbidden" <<<"$CONTENTS"; then
+    echo "FAIL: server package leaks $forbidden" >&2
+    exit 1
+  fi
 done
 echo DOCKER_SERVER_PACKAGE_CONTRACT_PASS
