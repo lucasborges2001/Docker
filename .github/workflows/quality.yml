@@ -42,6 +42,11 @@ jobs:
       - name: Deterministic telemetry fixtures
         run: bash test/shell/docker_telemetry_collector_test.sh
 
+      - name: Docker installation doctor fixtures
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s test/python -p '*installation_doctor_test.py' -v
+
       - name: Read-only web boundary
         run: |
           set -euo pipefail
