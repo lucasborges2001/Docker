@@ -113,6 +113,9 @@ def instance_ref(container_id: Any) -> str:
 
 
 def container_ref(name: Any, labels: dict[str, Any]) -> str:
+    writable_layer_bytes = parse_bytes(inspect.get("SizeRw") if "SizeRw" in inspect else record.get("writable_layer_bytes"))
+    rootfs_bytes = parse_bytes(inspect.get("SizeRootFs") if "SizeRootFs" in inspect else record.get("rootfs_bytes"))
+
     project = labels.get("com.docker.compose.project")
     service = labels.get("com.docker.compose.service")
     number = labels.get("com.docker.compose.container-number")
@@ -156,7 +159,7 @@ def load_fixture(path: str) -> dict[str, Any]:
     return data
 
 
-def collect_live(timeout: int, include_unlabeled: bool, monitor_label: str, allowlist: set[str], max_containers: int) -> dict[str, Any]:
+def collect_live(timeout: int, include_unlabeled: bool, monitor_label: str, allowlist: set[str], max_containers: int, storage_enabled: bool = False) -> dict[str, Any]:
     docker_bin = os.getenv("DOCKER_BIN", "docker")
     errors: list[dict[str, Any]] = []
 
@@ -195,7 +198,7 @@ def collect_live(timeout: int, include_unlabeled: bool, monitor_label: str, allo
         }
 
     try:
-        inspect_result = run_command([docker_bin, "inspect", *ids], timeout)
+        inspect_result = run_command([docker_bin, "inspect", *(["--size"] if storage_enabled else []), *ids], timeout)
     except subprocess.TimeoutExpired:
         inspect_result = subprocess.CompletedProcess([], 124, "", "")
         errors.append({"code": "inspect_timeout"})
@@ -330,6 +333,8 @@ def normalize_record(record: dict[str, Any], sampled_at: dt.datetime) -> dict[st
         "network_tx_bytes_total": network_tx,
         "block_read_bytes_total": block_read,
         "block_write_bytes_total": block_write,
+        "writable_layer_bytes": writable_layer_bytes,
+        "rootfs_bytes": rootfs_bytes,
         "pids": pids,
         "restart_count": restart_count,
         "started_at": isoformat(started) if started else None,
@@ -353,6 +358,7 @@ def top(items: Iterable[dict[str, Any]], field: str, limit: int = 5) -> list[dic
 def aggregate(items: list[dict[str, Any]]) -> dict[str, Any]:
     sum_field = lambda field: sum(int(item.get(field) or 0) for item in items)
     cpu_total = round(sum(float(item.get("cpu_percent") or 0.0) for item in items), 4)
+    measured_layers = [item["writable_layer_bytes"] for item in items if isinstance(item.get("writable_layer_bytes"), int)]
     return {
         "cpu_percent": cpu_total,
         "memory_used_bytes": sum_field("memory_used_bytes"),
@@ -360,6 +366,7 @@ def aggregate(items: list[dict[str, Any]]) -> dict[str, Any]:
         "network_tx_bytes_total": sum_field("network_tx_bytes_total"),
         "block_read_bytes_total": sum_field("block_read_bytes_total"),
         "block_write_bytes_total": sum_field("block_write_bytes_total"),
+        "writable_layer_bytes_total": sum(measured_layers) if measured_layers else None,
         "pids": sum_field("pids"),
         "without_memory_limit": sum(1 for item in items if item.get("memory_limit_bytes") is None),
         "without_healthcheck": sum(1 for item in items if not item.get("has_healthcheck")),
@@ -393,11 +400,12 @@ def main() -> int:
     timeout = env_int("DOCKER_TELEMETRY_COMMAND_TIMEOUT_SECONDS", 10, 1, 120)
     max_containers = env_int("DOCKER_TELEMETRY_MAX_CONTAINERS", 200, 1, 5000)
     include_unlabeled = env_bool("DOCKER_TELEMETRY_INCLUDE_UNLABELED", False)
+    storage_enabled = env_bool("DOCKER_TELEMETRY_STORAGE_ENABLED", False)
     monitor_label = os.getenv("MONITOR_LABEL", "dockwatch.monitor=true").strip()
     allowlist = {item.strip() for item in os.getenv("DOCKER_TELEMETRY_ALLOWLIST", "").split(",") if item.strip()}
 
     try:
-        source = load_fixture(args.fixture) if args.fixture else collect_live(timeout, include_unlabeled, monitor_label, allowlist, max_containers)
+        source = load_fixture(args.fixture) if args.fixture else collect_live(timeout, include_unlabeled, monitor_label, allowlist, max_containers, storage_enabled)
         payload = build_payload(source, sampled_at)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         payload = build_payload({"engine": {"available": False, "version": None}, "containers": [], "errors": [{"code": "collector_error", "detail": type(exc).__name__}]}, sampled_at)

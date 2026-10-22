@@ -66,6 +66,9 @@ jobs:
       - name: Docker uninstall dry-run safety
         run: bash test/shell/docker_uninstall_safety_test.sh
 
+      - name: Storage opt-in collector contract
+        run: python3 -m unittest discover -s test/python -p '*storage_collector_test.py' -v
+
       - name: Docker server packaging contract
         run: bash test/shell/docker_server_package_contract_test.sh
 

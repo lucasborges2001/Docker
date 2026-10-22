@@ -63,6 +63,7 @@ def main() -> int:
     timeout = collector.env_int("DOCKER_TELEMETRY_COMMAND_TIMEOUT_SECONDS", 10, 1, 120)
     maximum = collector.env_int("DOCKER_TELEMETRY_MAX_CONTAINERS", 200, 1, 5000)
     include_unlabeled = collector.env_bool("DOCKER_TELEMETRY_INCLUDE_UNLABELED", False)
+    storage_enabled = collector.env_bool("DOCKER_TELEMETRY_STORAGE_ENABLED", False)
     monitor_label = os.getenv("MONITOR_LABEL", "dockwatch.monitor=true").strip()
     allowlist = {item.strip() for item in os.getenv("DOCKER_TELEMETRY_ALLOWLIST", "").split(",") if item.strip()}
 
@@ -70,10 +71,10 @@ def main() -> int:
         if args.fixture:
             source = collector.load_fixture(args.fixture)
         elif include_unlabeled or not allowlist:
-            source = collector.collect_live(timeout, include_unlabeled, monitor_label, allowlist, maximum)
+            source = collector.collect_live(timeout, include_unlabeled, monitor_label, allowlist, maximum, storage_enabled)
         else:
-            labeled = collector.collect_live(timeout, False, monitor_label, set(), maximum)
-            allowed = collector.collect_live(timeout, True, monitor_label, allowlist, maximum)
+            labeled = collector.collect_live(timeout, False, monitor_label, set(), maximum, storage_enabled)
+            allowed = collector.collect_live(timeout, True, monitor_label, allowlist, maximum, storage_enabled)
             source = merge_sources(labeled, allowed, maximum)
         payload = collector.build_payload(source, sampled_at)
     except (OSError, ValueError, json.JSONDecodeError, RuntimeError) as exc:
