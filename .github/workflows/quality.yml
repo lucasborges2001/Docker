@@ -42,6 +42,9 @@ jobs:
       - name: Deterministic telemetry fixtures
         run: bash test/shell/docker_telemetry_collector_test.sh
 
+      - name: Docker degraded status contract
+        run: bash test/shell/docker_status_degraded_test.sh
+
       - name: PHP read-only API safety fixtures
         run: |
           set -euo pipefail

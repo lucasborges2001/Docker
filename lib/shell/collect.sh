@@ -72,6 +72,7 @@ containers.update({"monitored":len(items),"items":items,"without_memory_limit":i
 open_inc=int(os.environ.get('OPEN') or 0)
 if not engine.get('available'): severity=overall='warning'; summary='Docker no disponible o inaccesible'
 elif containers.get('unhealthy',0)>0 or open_inc>0: severity=overall='warning'; summary='Docker requiere atención'
+elif telemetry.get('errors'): severity=overall='warning'; summary='Telemetría Docker degradada'
 else: severity=overall='ok'; summary='Docker estable'
 try: interval=max(5,int(os.environ.get('INTERVAL') or 60))
 except ValueError: interval=60
