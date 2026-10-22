@@ -42,6 +42,9 @@ jobs:
       - name: Deterministic telemetry fixtures
         run: bash test/shell/docker_telemetry_collector_test.sh
 
+      - name: Docker server packaging contract
+        run: bash test/shell/docker_server_package_contract_test.sh
+
       - name: Docker installation doctor fixtures
         run: |
           set -euo pipefail
