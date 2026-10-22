@@ -93,5 +93,39 @@ class DockerInstallDoctorTest(unittest.TestCase):
         self.assertIn("--runtime requires --root=/", result.stderr)
 
 
+    def test_deployment_detects_secret_permissions_and_missing_timer(self):
+        for rel, line in (
+            ("etc/systemd/system/docker-watch-heartbeat.service", "ExecStart=/opt/docker-watch/bin/docker-heartbeat"),
+            ("etc/systemd/system/docker-watch-heartbeat.timer", "Unit=docker-watch-heartbeat.service"),
+        ):
+            (self.root / rel).write_text(line + "\n")
+        (self.root / "opt/docker-watch/scripts/server").mkdir(parents=True)
+        (self.root / "opt/docker-watch/scripts/server/installation-doctor.py").write_text("doctor\n")
+        (self.root / "opt/docker-watch/bin/docker-heartbeat").write_text("bin\n")
+        for name in ("docker-watch", "docker-telemetry", "docker-heartbeat"):
+            (self.root / "opt/docker-watch/bin" / name).chmod(0o755)
+        (self.root / "var/log/docker-watch").mkdir(parents=True)
+        env = self.root / "opt/docker-watch/config/server.env"
+        env.parent.mkdir(parents=True)
+        env.write_text("NO_REAL_SECRET=fixture\n")
+        env.chmod(0o600)
+        result = subprocess.run([sys.executable, str(DOCTOR), "--root", str(self.root), "--deployment"],
+                                capture_output=True, text=True)
+        data = json.loads(result.stdout)
+        self.assertEqual(0, result.returncode, data)
+        self.assertEqual("PASS", data["deployment"]["status"])
+        self.assertFalse(data["runtime_verified"])
+        env.chmod(0o644)
+        failed = subprocess.run([sys.executable, str(DOCTOR), "--root", str(self.root), "--deployment"],
+                                capture_output=True, text=True)
+        data = json.loads(failed.stdout)
+        self.assertEqual(1, failed.returncode)
+        self.assertEqual("INSECURE_PERMISSIONS", data["deployment"]["checks"]["server_env"])
+        env.chmod(0o600)
+        (self.root / "etc/systemd/system/docker-watch-heartbeat.timer").unlink()
+        failed = subprocess.run([sys.executable, str(DOCTOR), "--root", str(self.root), "--deployment"],
+                                capture_output=True, text=True)
+        self.assertEqual("MISSING", json.loads(failed.stdout)["deployment"]["checks"]["unit_timer"])
+
 if __name__ == "__main__":
     unittest.main()

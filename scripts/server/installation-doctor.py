@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import stat
 import sys
 
 SERVICE = "etc/systemd/system/docker-watch.service"
@@ -60,6 +61,76 @@ def probe_runtime(timeout: int = 10, docker_bin: str = "docker", systemctl_bin: 
             checks[name] = "TIMEOUT"
         except OSError:
             checks[name] = "EXEC_ERROR"
+    return {"status": "PASS" if all(value == "PASS" for value in checks.values()) else "FAIL",
+            "checks": checks}
+
+
+
+
+def deployment_state(root: Path) -> dict:
+    """Filesystem-only deployment preflight: no socket, systemctl or secrets read."""
+    checks: dict[str, str] = {}
+    units = {
+        "watch": ("etc/systemd/system/docker-watch.service", "ExecStart=/opt/docker-watch/bin/docker-watch"),
+        "telemetry": ("etc/systemd/system/docker-watch-telemetry.service", "ExecStart=/opt/docker-watch/bin/docker-telemetry --loop"),
+        "heartbeat": ("etc/systemd/system/docker-watch-heartbeat.service", "ExecStart=/opt/docker-watch/bin/docker-heartbeat"),
+        "timer": ("etc/systemd/system/docker-watch-heartbeat.timer", "Unit=docker-watch-heartbeat.service"),
+    }
+    for key, (rel, expected) in units.items():
+        file = root / rel
+        try:
+            if file.is_symlink():
+                checks["unit_" + key] = "UNSAFE_SYMLINK"
+            elif not file.is_file():
+                checks["unit_" + key] = "MISSING"
+            elif expected not in file.read_text(encoding="utf-8").splitlines():
+                checks["unit_" + key] = "DRIFT"
+            else:
+                checks["unit_" + key] = "PASS"
+        except (OSError, UnicodeError):
+            checks["unit_" + key] = "UNREADABLE"
+    for key, rel in {
+        "binary_watch": "opt/docker-watch/bin/docker-watch",
+        "binary_telemetry": "opt/docker-watch/bin/docker-telemetry",
+        "binary_heartbeat": "opt/docker-watch/bin/docker-heartbeat",
+        "doctor": "opt/docker-watch/scripts/server/installation-doctor.py",
+    }.items():
+        file = root / rel
+        try:
+            if file.is_symlink():
+                checks[key] = "UNSAFE_SYMLINK"
+            elif not file.is_file():
+                checks[key] = "MISSING"
+            elif key.startswith("binary_") and not (file.stat().st_mode & 0o111):
+                checks[key] = "NOT_EXECUTABLE"
+            else:
+                checks[key] = "PASS"
+        except OSError:
+            checks[key] = "UNREADABLE"
+    config = root / "opt/docker-watch/config/server.env"
+    try:
+        if config.is_symlink():
+            checks["server_env"] = "UNSAFE_SYMLINK"
+        elif not config.is_file():
+            checks["server_env"] = "MISSING"
+        elif stat.S_IMODE(config.stat().st_mode) & 0o077:
+            checks["server_env"] = "INSECURE_PERMISSIONS"
+        else:
+            checks["server_env"] = "PASS"
+    except OSError:
+        checks["server_env"] = "UNREADABLE"
+    for key, rel in {
+        "state_dir": "var/lib/docker-watch",
+        "log_dir": "var/log/docker-watch",
+    }.items():
+        directory = root / rel
+        try:
+            if directory.is_symlink():
+                checks[key] = "UNSAFE_SYMLINK"
+            else:
+                checks[key] = "PASS" if directory.is_dir() else "MISSING"
+        except OSError:
+            checks[key] = "UNREADABLE"
     return {"status": "PASS" if all(value == "PASS" for value in checks.values()) else "FAIL",
             "checks": checks}
 
@@ -127,6 +198,7 @@ def main() -> int:
     parser.add_argument("--root", type=Path, default=Path("/"), help="filesystem root; for fixtures only")
     parser.add_argument("--ttl", type=int, default=180)
     parser.add_argument("--runtime", action="store_true", help="explicit read-only Docker/systemd probes")
+    parser.add_argument("--deployment", action="store_true", help="read-only units, executable and permission checks")
     parser.add_argument("--timeout", type=int, default=10, help="per-command timeout, 1..30 seconds")
     args = parser.parse_args()
     if not args.root.is_absolute() or not args.root.is_dir() or not 30 <= args.ttl <= 86400 or not 1 <= args.timeout <= 30:
@@ -134,11 +206,16 @@ def main() -> int:
     if args.runtime and args.root.resolve() != Path("/"):
         parser.error("--runtime requires --root=/; fixture roots never inspect the real runtime")
     status = state(args.root, args.ttl, datetime.now(timezone.utc))
+    if args.deployment:
+        status["deployment"] = deployment_state(args.root)
     if args.runtime:
         status["runtime"] = probe_runtime(args.timeout, os.environ.get("DOCKER_BIN", "docker"))
         status["runtime_verified"] = status["runtime"]["status"] == "PASS"
     print(json.dumps(status, sort_keys=True))
-    return 0 if status["classification"] == "CONTRACT_OK_DISK" and (not args.runtime or status["runtime_verified"]) else 1
+    disk_ok = status["classification"] == "CONTRACT_OK_DISK"
+    deployment_ok = not args.deployment or status["deployment"]["status"] == "PASS"
+    runtime_ok = not args.runtime or status["runtime_verified"]
+    return 0 if disk_ok and deployment_ok and runtime_ok else 1
 
 
 if __name__ == "__main__":
