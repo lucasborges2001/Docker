@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Disposable Docker Watch v2 installation contract checks."""
 from datetime import datetime, timedelta, timezone
+import importlib.util
 import json
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 DOCTOR = Path(__file__).resolve().parents[2] / "scripts/server/installation-doctor.py"
 
@@ -56,6 +58,39 @@ class DockerInstallDoctorTest(unittest.TestCase):
     def test_wrong_module(self):
         self.report.write_text(json.dumps({"module": "boot", "schema_version": 2}))
         self.assertEqual("INVALID_CONTRACT", self.execute()[1]["checks"]["snapshot"])
+
+
+    def test_runtime_probes_use_readonly_commands_and_no_shell(self):
+        spec = importlib.util.spec_from_file_location("docker_installation_doctor", DOCTOR)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        seen = []
+        def fake_run(argv, **kwargs):
+            seen.append(argv)
+            self.assertIsInstance(argv, list)
+            self.assertNotIn("shell", kwargs)
+            return subprocess.CompletedProcess(argv, 0, "{}\\n", "")
+        with mock.patch.object(module.subprocess, "run", side_effect=fake_run):
+            result = module.probe_runtime(timeout=2, docker_bin="docker", systemctl_bin="systemctl")
+        self.assertEqual("PASS", result["status"])
+        self.assertEqual(5, len(seen))
+        self.assertEqual(["docker", "stats", "--no-stream", "--all", "--format", "{{json .}}"], seen[2])
+        self.assertTrue(all(v == "PASS" for v in result["checks"].values()))
+
+    def test_runtime_probe_classifies_permissions_and_invalid_json(self):
+        spec = importlib.util.spec_from_file_location("docker_installation_doctor", DOCTOR)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with mock.patch.object(module.subprocess, "run", return_value=subprocess.CompletedProcess([], 1, "", "permission denied")):
+            self.assertEqual("PERMISSION_DENIED", module.command_probe(["docker", "ps"], 2))
+        with mock.patch.object(module.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "not-json\\n", "")):
+            self.assertEqual("INVALID_JSON", module.command_probe(["docker", "ps"], 2, True))
+
+    def test_fixture_root_rejects_live_runtime_probe(self):
+        result = subprocess.run([sys.executable, str(DOCTOR), "--root", str(self.root), "--runtime"],
+                                capture_output=True, text=True)
+        self.assertEqual(2, result.returncode)
+        self.assertIn("--runtime requires --root=/", result.stderr)
 
 
 if __name__ == "__main__":
