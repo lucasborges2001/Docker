@@ -42,6 +42,12 @@ jobs:
       - name: Deterministic telemetry fixtures
         run: bash test/shell/docker_telemetry_collector_test.sh
 
+      - name: PHP read-only API safety fixtures
+        run: |
+          set -euo pipefail
+          php test/php/DockerPathsTest.php
+          php test/php/DockerEventReaderTest.php
+
       - name: Docker server packaging contract
         run: bash test/shell/docker_server_package_contract_test.sh
 

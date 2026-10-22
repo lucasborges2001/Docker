@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
-require_once __DIR__ . '/../../back/bootstrap.php';
+require_once __DIR__ . '/../../back/support/contracts.php';
+require_once __DIR__ . '/../../back/support/paths.php';
 
 // A missing live report must never appear as a healthy sample in production.
 $dir = sys_get_temp_dir() . '/docker-paths-missing-' . bin2hex(random_bytes(8));

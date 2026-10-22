@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-require_once __DIR__ . '/../../back/bootstrap.php';
+require_once __DIR__ . '/../../back/metrics/DockerEventReader.php';
 
 $r = new DockerEventReader(__DIR__ . '/../../var/sample-reports/events.jsonl');
 $events = $r->latest(10);
