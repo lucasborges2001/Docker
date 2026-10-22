@@ -45,6 +45,9 @@ jobs:
       - name: Docker degraded status contract
         run: bash test/shell/docker_status_degraded_test.sh
 
+      - name: Counter rate pure contract
+        run: php test/php/DockerCounterRateTest.php
+
       - name: PHP read-only API safety fixtures
         run: |
           set -euo pipefail
