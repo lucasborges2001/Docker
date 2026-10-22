@@ -69,7 +69,7 @@ class DockerInstallDoctorTest(unittest.TestCase):
             seen.append(argv)
             self.assertIsInstance(argv, list)
             self.assertNotIn("shell", kwargs)
-            return subprocess.CompletedProcess(argv, 0, "{}\\n", "")
+            return subprocess.CompletedProcess(argv, 0, "{}\n", "")
         with mock.patch.object(module.subprocess, "run", side_effect=fake_run):
             result = module.probe_runtime(timeout=2, docker_bin="docker", systemctl_bin="systemctl")
         self.assertEqual("PASS", result["status"])
@@ -83,7 +83,7 @@ class DockerInstallDoctorTest(unittest.TestCase):
         spec.loader.exec_module(module)
         with mock.patch.object(module.subprocess, "run", return_value=subprocess.CompletedProcess([], 1, "", "permission denied")):
             self.assertEqual("PERMISSION_DENIED", module.command_probe(["docker", "ps"], 2))
-        with mock.patch.object(module.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "not-json\\n", "")):
+        with mock.patch.object(module.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "not-json\n", "")):
             self.assertEqual("INVALID_JSON", module.command_probe(["docker", "ps"], 2, True))
 
     def test_fixture_root_rejects_live_runtime_probe(self):
