@@ -67,7 +67,7 @@ ExecStart={root}/current/docker/bin/{command}{args}
 Description=Run Docker Watch daily heartbeat (servidor layout)
 
 [Timer]
-OnCalendar=*-*-* 08:00:00
+OnCalendar=*-*-* 09:05:00
 Persistent=true
 Unit=docker-watch-heartbeat.service
 

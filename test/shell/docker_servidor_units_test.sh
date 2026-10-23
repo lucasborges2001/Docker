@@ -24,6 +24,11 @@ done
 grep -Fxq "ReadWritePaths=$SRV/state/docker $SRV/logs/docker" "$TMP/docker-watch-telemetry.service"
 grep -Fxq "ProtectHome=read-only" "$TMP/docker-watch.service"
 grep -Fxq "User=dockwatch" "$TMP/docker-watch.service"
+grep -Fxq "OnCalendar=*-*-* 09:05:00" "$TMP/docker-watch-heartbeat.timer"
+if grep -Eq '^On(UnitActiveSec|BootSec)=' "$TMP/docker-watch-heartbeat.timer"; then
+  echo "FAIL: servidor heartbeat changed cadence to interval" >&2
+  exit 1
+fi
 grep -Fxq "Unit=docker-watch-heartbeat.service" "$TMP/docker-watch-heartbeat.timer"
 if python3 -B "$RENDER" --root /var/lib/docker-watch --unit docker-watch.service >"$TMP/invalid" 2>/dev/null; then
   echo "FAIL: unsafe root accepted" >&2
