@@ -39,9 +39,11 @@ llama a Docker, no inicia servicios, no toca credenciales y no instala paquetes.
 
 1. Fijar SHAs de Base y Docker; comprobar que los binarios usan BASE_DIR
    apuntando a current/base, sin instalar una dependencia paralela en /opt.
-2. El config/docker/server.env privado debe apuntar a state/docker y
-   logs/docker para todas las salidas. Evitar importar el .env legacy al
-   paquete o a Git.
+2. El archivo privado `config/docker/server.env` es obligatorio para iniciar
+   las tres unidades de servicio nuevas (`EnvironmentFile` sin prefijo `-`).
+   Debe apuntar a `state/docker` y `logs/docker` para todas las salidas.
+   Su existencia no certifica valores ni precedencia de carga: revisar también
+   archivos de entorno residuales; no importar `.env` legacy al paquete o Git.
 3. Verificar con la identidad dockwatch el acceso efectivo a current/base,
    current/docker, config, state y logs. ProtectHome=read-only **no** concede
    permisos DAC. Conceder exclusivamente travesía/lectura necesaria, nunca

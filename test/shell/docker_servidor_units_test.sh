@@ -14,7 +14,13 @@ grep -Fxq "ExecStart=$SRV/current/docker/bin/docker-heartbeat" "$TMP/docker-watc
 grep -Fxq "Environment=BASE_DIR=$SRV/current/base" "$TMP/docker-watch.service"
 grep -Fxq "Environment=DOCKER_WATCH_STATE_DIR=$SRV/state/docker" "$TMP/docker-watch.service"
 grep -Fxq "Environment=DOCKER_WATCH_EVENTS_LOG=$SRV/logs/docker/events.jsonl" "$TMP/docker-watch.service"
-grep -Fxq "EnvironmentFile=-$SRV/config/docker/server.env" "$TMP/docker-watch.service"
+for unit in docker-watch.service docker-watch-telemetry.service docker-watch-heartbeat.service; do
+  grep -Fxq "EnvironmentFile=$SRV/config/docker/server.env" "$TMP/$unit"
+  if grep -Fq "EnvironmentFile=-$SRV/config/docker/server.env" "$TMP/$unit"; then
+    echo "FAIL: private Docker server.env must be required in $unit" >&2
+    exit 1
+  fi
+done
 grep -Fxq "ReadWritePaths=$SRV/state/docker $SRV/logs/docker" "$TMP/docker-watch-telemetry.service"
 grep -Fxq "ProtectHome=read-only" "$TMP/docker-watch.service"
 grep -Fxq "User=dockwatch" "$TMP/docker-watch.service"

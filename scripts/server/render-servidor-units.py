@@ -34,7 +34,7 @@ Environment=BASE_DIR={root}/current/base
 Environment=DOCKER_WATCH_STATE_DIR={root}/state/docker
 Environment=DOCKER_WATCH_REPORTS_DIR={root}/state/docker/reports
 Environment=DOCKER_WATCH_EVENTS_LOG={root}/logs/docker/events.jsonl
-EnvironmentFile=-{root}/config/docker/server.env
+EnvironmentFile={root}/config/docker/server.env
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
