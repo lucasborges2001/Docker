@@ -127,5 +127,25 @@ class DockerInstallDoctorTest(unittest.TestCase):
                                 capture_output=True, text=True)
         self.assertEqual("MISSING", json.loads(failed.stdout)["deployment"]["checks"]["unit_timer"])
 
+    def test_retention_doctor_detects_default_horizon_gap(self):
+        invocation = [sys.executable, str(DOCTOR), "--root", str(self.root),
+                      "--retention", "--report-bytes", "4000"]
+        result = subprocess.run(invocation, capture_output=True, text=True)
+        payload = json.loads(result.stdout)
+        self.assertEqual(1, result.returncode)
+        self.assertEqual("WARN", payload["retention"]["status"])
+        self.assertEqual(43200, payload["retention"]["required_snapshots"])
+        self.assertLess(payload["retention"]["coverage_days_by_count"], 30)
+        improved = subprocess.run(invocation + ["--max-snapshots", "50000"],
+                                  capture_output=True, text=True)
+        self.assertEqual(0, improved.returncode, improved.stdout)
+        self.assertEqual("PASS", json.loads(improved.stdout)["retention"]["status"])
+
+    def test_retention_invalid_parameters_are_rejected(self):
+        command = [sys.executable, str(DOCTOR), "--root", str(self.root),
+                   "--retention", "--interval-seconds", "0"]
+        result = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(2, result.returncode)
+
 if __name__ == "__main__":
     unittest.main()

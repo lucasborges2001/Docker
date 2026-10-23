@@ -3,6 +3,7 @@
 import argparse
 from datetime import datetime, timezone
 import json
+import math
 import os
 from pathlib import Path
 import subprocess
@@ -136,6 +137,40 @@ def deployment_state(root: Path) -> dict:
 
 
 
+
+def retention_state(root: Path, interval: int, days: int, max_snapshots: int,
+                    max_bytes: int, report_bytes: int | None) -> dict:
+    """Capacity estimate only. No snapshot contents or secrets are read."""
+    requested = math.ceil(days * 86400 / interval)
+    measured_bytes = report_bytes
+    if measured_bytes is None:
+        report = root / REPORT
+        try:
+            measured_bytes = report.stat().st_size if report.is_file() else None
+            summary = root / "var/lib/docker-watch/reports/latest/summary.txt"
+            if measured_bytes and summary.is_file():
+                measured_bytes += summary.stat().st_size
+        except OSError:
+            measured_bytes = None
+    by_count_days = round(max_snapshots * interval / 86400, 3)
+    byte_capacity = max_bytes // measured_bytes if measured_bytes and measured_bytes > 0 else None
+    by_bytes_days = round(byte_capacity * interval / 86400, 3) if byte_capacity is not None else None
+    if max_snapshots < requested or (byte_capacity is not None and byte_capacity < requested):
+        status = "WARN"
+    elif byte_capacity is None:
+        status = "UNKNOWN"
+    else:
+        status = "PASS"
+    return {
+        "status": status, "interval_seconds": interval, "requested_days": days,
+        "required_snapshots": requested, "max_snapshots": max_snapshots,
+        "max_bytes": max_bytes, "sample_report_bytes": measured_bytes,
+        "coverage_days_by_count": by_count_days,
+        "estimated_days_by_bytes": by_bytes_days,
+        "note": "Capacity is an estimate based on sample size, not guaranteed retention.",
+    }
+
+
 def state(root: Path, ttl: int, now: datetime) -> dict:
     checks = {}
     for name, rel, marker in [
@@ -199,15 +234,28 @@ def main() -> int:
     parser.add_argument("--ttl", type=int, default=180)
     parser.add_argument("--runtime", action="store_true", help="explicit read-only Docker/systemd probes")
     parser.add_argument("--deployment", action="store_true", help="read-only units, executable and permission checks")
+    parser.add_argument("--retention", action="store_true", help="estimate snapshot history coverage without reading contents")
+    parser.add_argument("--interval-seconds", type=int, default=60)
+    parser.add_argument("--retention-days", type=int, default=30)
+    parser.add_argument("--max-snapshots", type=int, default=10000)
+    parser.add_argument("--max-bytes", type=int, default=268435456)
+    parser.add_argument("--report-bytes", type=int, default=None, help="override observed report+summary size for planning")
     parser.add_argument("--timeout", type=int, default=10, help="per-command timeout, 1..30 seconds")
     args = parser.parse_args()
     if not args.root.is_absolute() or not args.root.is_dir() or not 30 <= args.ttl <= 86400 or not 1 <= args.timeout <= 30:
         parser.error("invalid root, TTL or timeout")
+    if args.retention and (not 5 <= args.interval_seconds <= 86400 or not 1 <= args.retention_days <= 3650
+                           or not 1 <= args.max_snapshots <= 1000000 or args.max_bytes < 1048576
+                           or (args.report_bytes is not None and not 1 <= args.report_bytes <= 2097152)):
+        parser.error("invalid retention inputs")
     if args.runtime and args.root.resolve() != Path("/"):
         parser.error("--runtime requires --root=/; fixture roots never inspect the real runtime")
     status = state(args.root, args.ttl, datetime.now(timezone.utc))
     if args.deployment:
         status["deployment"] = deployment_state(args.root)
+    if args.retention:
+        status["retention"] = retention_state(args.root, args.interval_seconds, args.retention_days,
+                                              args.max_snapshots, args.max_bytes, args.report_bytes)
     if args.runtime:
         status["runtime"] = probe_runtime(args.timeout, os.environ.get("DOCKER_BIN", "docker"))
         status["runtime_verified"] = status["runtime"]["status"] == "PASS"
@@ -215,7 +263,8 @@ def main() -> int:
     disk_ok = status["classification"] == "CONTRACT_OK_DISK"
     deployment_ok = not args.deployment or status["deployment"]["status"] == "PASS"
     runtime_ok = not args.runtime or status["runtime_verified"]
-    return 0 if disk_ok and deployment_ok and runtime_ok else 1
+    retention_ok = not args.retention or status["retention"]["status"] == "PASS"
+    return 0 if disk_ok and deployment_ok and runtime_ok and retention_ok else 1
 
 
 if __name__ == "__main__":
