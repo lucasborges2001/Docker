@@ -1,9 +1,8 @@
 name: Docker Quality
 
+# Manual-only to avoid automatic GitHub Actions minute consumption.
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
