@@ -489,3 +489,43 @@ python3 scripts/server/installation-doctor.py --runtime --timeout 10
 - `--runtime`: Docker/systemd reales, lectura con timeout.
 - El doctor no reemplaza el TestKit ni un smoke HTTP, y ningún PASS de
   doctores implica que el producto esté validado sobre el servidor.
+
+## Validación sin consumo de GitHub Actions (2026-10-22)
+
+El único workflow del repositorio, `.github/workflows/quality.yml`,
+se conserva exclusivamente para ejecución **manual**
+(`workflow_dispatch`). No hay disparadores `push` o `pull_request`
+en Docker. Un workflow lanzado manualmente seguiría consumiendo minutos;
+la vía predeterminada es el checkout local.
+
+```bash
+cd /ruta/verificada/Docker
+git status --short
+git branch --show-current
+git rev-parse HEAD
+bash scripts/dev/verify-local.sh --compact
+```
+
+`verify-local.sh` replica las comprobaciones sin daemon del anterior
+workflow (sintaxis y fixtures) y mantiene warnings/fallos accionables aun
+en modo compacto. También acepta `--verbose`. No instala paquetes,
+no ejecuta Docker ni systemd, no modifica gitlinks ni consulta servicios.
+Los logs temporales se eliminan al terminar. El resultado incluye
+`sha`, `checkout=clean|dirty|not-a-git-checkout`, conteo PASS/FAIL y
+`evidence=local-fixtures-only`; si está sucio, no atribuir el resultado
+solamente al SHA. Código 0: todos los checks seleccionados completados;
+1: hubo uno o más fallos; 2: preflight/argumentos inválidos.
+No hay un reporte remoto durable creado automáticamente.
+
+**Base reusable:** no agregar temporizadores, formatos JSON propios ni
+reporters paralelos al validador. Si el checkout real de Base contiene
+`bin/base-script-timing.py`, envolver explícitamente el comando anterior
+con `run --execute` y generar el resumen mediante `report`, siguiendo
+`Base/docs/contratos/script-timing-v1.md`. Guardar los registros en un
+directorio privado e ignorado por Git. Base puede ser anterior a esa
+capacidad en el gitlink actual; la falta del CLI no bloquea las pruebas.
+
+**TestKit/Pruebas:** la validación de integración sigue siendo una fase
+separada sobre `host_sha`, gitlinks exactos y `tested_sha`. No crear un
+request remoto sin autorización y sin verificar el executor disponible.
+Un PASS de las pruebas offline no implica PASS del producto instalado.

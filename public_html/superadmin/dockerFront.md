@@ -90,4 +90,4 @@ grep -RInE \
   public_html back || true
 ```
 
-El workflow `.github/workflows/quality.yml` ejecuta esta frontera estática en cada push y pull request.
+Esta comprobación también se ejecuta sin workflows mediante `bash scripts/dev/verify-local.sh --compact`. El workflow `.github/workflows/quality.yml` quedó manual-only; no hay validación automática en cada push/PR.
