@@ -70,6 +70,7 @@ run_check history_files php test/php/DockerHistoryFilesTest.php
 run_check sample_data_guard php test/php/DockerPathsTest.php
 run_check event_sanitization php test/php/DockerEventReaderTest.php
 run_check installer_policy bash test/shell/docker_install_policy_test.sh
+run_check servidor_units bash test/shell/docker_servidor_units_test.sh
 run_check uninstall_dry_run bash test/shell/docker_uninstall_safety_test.sh
 run_check storage_opt_in python3 -B -m unittest discover -s test/python -p '*storage_collector_test.py' -v
 run_check server_package bash test/shell/docker_server_package_contract_test.sh
