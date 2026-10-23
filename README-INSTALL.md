@@ -34,6 +34,14 @@ Convención elegida:
 
 No se instalan secretos.
 
+## Alternativa compartida en `~/servidor/`
+
+Las unidades del nuevo layout se generan sin mutaciones con
+`scripts/server/render-servidor-units.py`. Consultar
+[`docs/operacion/servidor-layout.md`](docs/operacion/servidor-layout.md)
+antes de tocar systemd: exige SHA, ACL, configuración, backups y rollback.
+**El instalador legacy en `/opt` no sirve para este cutover.**
+
 ## Web/SuperAdmin
 
 ```bash
