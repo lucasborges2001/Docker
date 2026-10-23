@@ -42,7 +42,7 @@ run_check() {
 }
 php_syntax() { find . -type f -name '*.php' -print0 | xargs -0 -r -n1 php -l; }
 bash_syntax() {
-  find . -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
+  find . -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n || return $?
   local file
   for file in bin/docker-watch bin/docker-heartbeat bin/docker-telemetry bin/docker-watch-test docker-watch.sh heartbeat.sh; do
     [[ ! -f "$file" ]] || bash -n "$file"
