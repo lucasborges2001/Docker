@@ -12,12 +12,19 @@ docker_load_base_and_module_shell() {
   export BASE_DIR DOCKER_DIR
   source "$BASE_DIR/lib/shell/env.sh"; source "$BASE_DIR/lib/shell/log.sh"; source "$BASE_DIR/lib/shell/json.sh"; source "$BASE_DIR/lib/shell/lock.sh"; source "$BASE_DIR/lib/shell/time.sh"; source "$BASE_DIR/lib/shell/telegram.sh"
   source "$DOCKER_DIR/lib/shell/collect.sh"; source "$DOCKER_DIR/lib/shell/render.sh"; source "$DOCKER_DIR/lib/shell/persist.sh"
-  base_env_load_file "$DOCKER_DIR/.env"; base_env_load_file "$DOCKER_DIR/config/server.env"; base_env_load_file "/etc/docker-watch/docker-watch.env"
+  if [[ "${DOCKER_SERVIDOR_ACTIVE:-false}" != true ]]; then
+    base_env_load_file "$DOCKER_DIR/.env"; base_env_load_file "$DOCKER_DIR/config/server.env"; base_env_load_file "/etc/docker-watch/docker-watch.env"
+  fi
 }
 usage() { echo "Usage: docker-telemetry [--env FILE] [--reports-dir DIR] [--once|--loop] [--print]"; }
 MODE=once; PRINT=false; EXTRA_ENV=""
 while [[ $# -gt 0 ]]; do case "$1" in --env) EXTRA_ENV="${2:?}"; shift 2;; --reports-dir) export DOCKER_WATCH_REPORTS_DIR="${2:?}"; shift 2;; --once) MODE=once; shift;; --loop) MODE=loop; shift;; --print) PRINT=true; shift;; -h|--help) usage; exit 0;; *) echo "Unknown argument: $1" >&2; exit 2;; esac; done
-docker_load_base_and_module_shell; [[ -n "$EXTRA_ENV" ]] && base_env_load_file "$EXTRA_ENV"
+source "$DOCKER_DIR/lib/shell/servidor.sh"
+docker_servidor_config_guard "$EXTRA_ENV"
+docker_load_base_and_module_shell
+if [[ "${DOCKER_SERVIDOR_ACTIVE:-false}" != true && -n "$EXTRA_ENV" ]]; then
+  base_env_load_file "$EXTRA_ENV"
+fi
 [[ "$(base_env_bool DOCKER_TELEMETRY_ENABLED true)" != true ]] && { base_log_info "Docker telemetry disabled"; exit 0; }
 DOCKER_WATCH_REPORTS_DIR="${DOCKER_WATCH_REPORTS_DIR:-/var/lib/docker-watch/reports}"; DOCKER_WATCH_STATE_DIR="${DOCKER_WATCH_STATE_DIR:-/var/lib/docker-watch}"
 interval="${DOCKER_TELEMETRY_INTERVAL_SECONDS:-60}"; [[ "$interval" =~ ^[0-9]+$ ]] || interval=60; (( interval < 5 )) && interval=5

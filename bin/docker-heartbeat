@@ -12,13 +12,20 @@ docker_load_base_and_module_shell() {
   export BASE_DIR DOCKER_DIR
   source "$BASE_DIR/lib/shell/env.sh"; source "$BASE_DIR/lib/shell/log.sh"; source "$BASE_DIR/lib/shell/json.sh"; source "$BASE_DIR/lib/shell/lock.sh"; source "$BASE_DIR/lib/shell/time.sh"; source "$BASE_DIR/lib/shell/telegram.sh"
   source "$DOCKER_DIR/lib/shell/collect.sh"; source "$DOCKER_DIR/lib/shell/events.sh"; source "$DOCKER_DIR/lib/shell/incident.sh"; source "$DOCKER_DIR/lib/shell/render.sh"; source "$DOCKER_DIR/lib/shell/persist.sh"; source "$DOCKER_DIR/lib/shell/heartbeat.sh"
-  base_env_load_file "$DOCKER_DIR/.env"; base_env_load_file "$DOCKER_DIR/config/server.env"; base_env_load_file "/etc/docker-watch/docker-watch.env"
+  if [[ "${DOCKER_SERVIDOR_ACTIVE:-false}" != true ]]; then
+    base_env_load_file "$DOCKER_DIR/.env"; base_env_load_file "$DOCKER_DIR/config/server.env"; base_env_load_file "/etc/docker-watch/docker-watch.env"
+  fi
 }
 
 usage() { echo "Usage: docker-heartbeat [--env FILE] [--reports-dir DIR] [--no-telegram] [--print] [--force]"; }
 DOCKER_NO_TELEGRAM=false; DOCKER_PRINT=false; DOCKER_FORCE=false; DOCKER_EXTRA_ENV_FILE=""
 while [[ $# -gt 0 ]]; do case "$1" in --env) DOCKER_EXTRA_ENV_FILE="${2:?}"; shift 2;; --reports-dir) export DOCKER_WATCH_REPORTS_DIR="${2:?}"; shift 2;; --no-telegram) DOCKER_NO_TELEGRAM=true; shift;; --print) DOCKER_PRINT=true; shift;; --force) DOCKER_FORCE=true; shift;; -h|--help) usage; exit 0;; *) echo "Unknown argument: $1" >&2; exit 2;; esac; done
-docker_load_base_and_module_shell; [[ -n "$DOCKER_EXTRA_ENV_FILE" ]] && base_env_load_file "$DOCKER_EXTRA_ENV_FILE"
+source "$DOCKER_DIR/lib/shell/servidor.sh"
+docker_servidor_config_guard "$DOCKER_EXTRA_ENV_FILE"
+docker_load_base_and_module_shell
+if [[ "${DOCKER_SERVIDOR_ACTIVE:-false}" != true && -n "$DOCKER_EXTRA_ENV_FILE" ]]; then
+  base_env_load_file "$DOCKER_EXTRA_ENV_FILE"
+fi
 [[ "$(base_env_bool HEARTBEAT_ENABLED true)" != true ]] && { base_log_info "Docker heartbeat disabled"; exit 0; }
 DOCKER_WATCH_REPORTS_DIR="${DOCKER_WATCH_REPORTS_DIR:-/var/lib/docker-watch/reports}"; DOCKER_WATCH_STATE_DIR="${DOCKER_WATCH_STATE_DIR:-/var/lib/docker-watch}"; DOCKER_WATCH_RETENTION_DAYS="${DOCKER_WATCH_RETENTION_DAYS:-14}"; [[ "$DOCKER_NO_TELEGRAM" == true ]] && SEND_TELEGRAM=false
 base_lock_acquire "$DOCKER_WATCH_STATE_DIR/docker-heartbeat.lock" 5 DOCKER_HEARTBEAT_LOCK_FD || exit 75; trap 'base_lock_release "${DOCKER_HEARTBEAT_LOCK_FD:-}"' EXIT

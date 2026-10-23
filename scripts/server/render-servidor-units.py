@@ -31,6 +31,7 @@ def render(root: Path, unit: str) -> str:
     common = f"""User=dockwatch
 Group=dockwatch
 Environment=BASE_DIR={root}/current/base
+Environment=DOCKER_SERVIDOR_ROOT={root}
 Environment=DOCKER_WATCH_STATE_DIR={root}/state/docker
 Environment=DOCKER_WATCH_REPORTS_DIR={root}/state/docker/reports
 Environment=DOCKER_WATCH_EVENTS_LOG={root}/logs/docker/events.jsonl
