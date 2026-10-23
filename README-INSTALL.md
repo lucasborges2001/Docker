@@ -50,3 +50,31 @@ BASE_DIR=../Base bash scripts/dev/smoke.sh
 ```
 
 Los tests no requieren Docker real y no envían Telegram real.
+
+## Diagnóstico y desinstalación
+
+Antes de habilitar servicios, inspeccionar el resultado del doctor:
+
+```bash
+python3 scripts/server/installation-doctor.py --deployment
+python3 scripts/server/installation-doctor.py --retention
+```
+
+La configuración existente en `/opt/docker-watch/config/server.env` se
+preserva; el instalador aplica permisos 0600 y bloquea unidades legacy
+incompatibles. No ejecutarlo sobre una instalación legacy sin backup/cutover.
+
+El desinstalador planifica sin mutar si no se solicita `--apply`:
+
+```bash
+bash scripts/server/uninstall.sh --dry-run
+PURGE_DATA=true bash scripts/server/uninstall.sh --dry-run
+```
+
+Los comandos efectivos requieren **una autorización operativa independiente**,
+backup y confirmación explícita. El primer nivel `--apply --confirm docker-watch`
+deshabilita watcher, telemetry y heartbeat y elimina binarios/unidades;
+el segundo nivel de purga de datos añade `PURGE_DATA=true` y
+`--confirm-purge DELETE_DOCKER_WATCH_DATA`. No ejecutar una desinstalación
+real como parte del diagnóstico. Consultar
+`docs/pendientes/20260708-0010-docker-runtime-safety.md`.

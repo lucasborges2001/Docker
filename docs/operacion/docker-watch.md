@@ -241,6 +241,7 @@ public_html/api/history.php
 public_html/api/events.php
 public_html/api/resources.php
 public_html/api/container.php?container_ref=<ref>
+public_html/api/container-trend.php?container_ref=<ref>&limit=20
 ```
 
 SuperAdmin:
@@ -441,3 +442,50 @@ bytes no incluye todo el overhead del filesystem ni variaciones futuras
 de tamaño. El doctor nunca lee los contenidos de `server.env` ni
 reportes. Los valores existentes en un `server.env` desplegado **no se
 reescriben** automáticamente por este cambio de defaults.
+
+## Telemetría de crecimiento introducida en octubre de 2026
+
+`container-trend.php` devuelve muestras cronológicas sanitizadas para un
+`container_ref` válido, con un máximo de 50 registros. Las tasas se calculan
+**al leer** (no se persisten) mediante `DockerCounterRate`, que exige mismo
+`instance_ref`, timestamps posteriores y contadores no decrecientes.
+La primera muestra visible tiene `rate=null`. Ausencia de un contenedor en
+una muestra o cambio de engine versionado corta la continuidad; la identidad
+real de un engine distinto aún no está disponible como campo estable.
+
+`DOCKER_TELEMETRY_STORAGE_ENABLED=false` es el default. Sólo con `true`
+el collector llama a `docker inspect --size`, con timeout existente.
+`writable_layer_bytes` mide la capa escribible del contenedor;
+`rootfs_bytes` es el tamaño de root filesystem reportado por Docker.
+No representan uso de volúmenes, logs ni espacio exclusivo de imágenes, y
+`rootfs_bytes` no debe sumarse entre contenedores. Los campos ausentes son
+`null`, no cero. Habilitar `--size` requiere validar costo y compatibilidad
+con el daemon real, especialmente en Docker rootless.
+
+El historial ahora descarta directorios que no cumplen el patrón timestamp
+y symlinks, y carga solamente los reportes necesarios con un máximo de
+2 MiB por reporte. Aun así, el inventario de directorios consume recursos:
+validar escala y retención real en una instalación autorizada.
+
+Los contratos HTTP dejaron de exponer rutas operativas como
+`latest_path`, `events_path`, `history[].path`,
+`probe.paths` y `artifacts` con paths internos.
+Esto puede afectar consumidores que dependieran de esas rutas: inventariarlos
+antes de actualizar el gitlink del host. Los datos completos sólo permanecen
+en almacenamiento operativo restringido.
+
+### Doctores disponibles
+
+```bash
+python3 scripts/server/installation-doctor.py
+python3 scripts/server/installation-doctor.py --deployment
+python3 scripts/server/installation-doctor.py --retention --report-bytes 8192
+# Sólo tras autorización y cutover real:
+python3 scripts/server/installation-doctor.py --runtime --timeout 10
+```
+
+- `--deployment`: permisos de `server.env`, ejecutables y unidades.
+- `--retention`: muestra capacidad por conteo y por bytes estimados.
+- `--runtime`: Docker/systemd reales, lectura con timeout.
+- El doctor no reemplaza el TestKit ni un smoke HTTP, y ningún PASS de
+  doctores implica que el producto esté validado sobre el servidor.

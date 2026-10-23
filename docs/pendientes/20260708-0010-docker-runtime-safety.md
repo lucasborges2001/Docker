@@ -1,90 +1,58 @@
-# Pendiente P1 — Docker runtime safety para scripts server
+# Pendiente P1 — Validación operacional de instalación y uninstall Docker
 
-## Qué falta
+## Estado al 2026-10-22
 
-Endurecer scripts server, especialmente `scripts/server/uninstall.sh`, para evitar borrados inseguros.
+**Guardas implementadas y CI PASS; aplicación/desinstalación real no verificada.**
+No borrar este pendiente hasta completar la validación de un entorno controlado.
 
-## Evidencia revisada
+## Evidencia y cambios
 
-El auditor reportó:
+- `scripts/server/uninstall.sh`: plan por defecto, `--apply --confirm docker-watch`,
+  `--confirm-purge DELETE_DOCKER_WATCH_DATA` adicional cuando `PURGE_DATA=true`,
+  lista fija de destinos y bloqueo de symlinks.
+- Uninstall deshabilita también `docker-watch-telemetry.service`, detiene
+  el heartbeat oneshot y recarga systemd.
+- `scripts/server/install.sh`: preflight de root, binarios, paths y unidades
+  legacy; `rsync` excluye secrets locales y bytecode; `server.env` usa 0600.
+- Doctor `scripts/server/installation-doctor.py --deployment` verifica
+  archivos de unidades, ejecutables, secret mode y directorios, sin ejecutar Docker.
+- `test/shell/docker_uninstall_safety_test.sh` sólo prueba dry-run y guards
+  de confirmación. `test/shell/docker_install_policy_test.sh` es prueba
+  **estática**, no instalación real.
+- GitHub Actions para Docker/main:
+  https://github.com/lucasborges2001/Docker/actions/runs/39875681359
+  (evidencia histórica del SHA a668b4c, no prueba del servidor).
 
-```txt
-SH_UNGUARDED_RM_RF :: scripts/server/uninstall.sh
-```
+## Gap operativo y riesgos
 
-El script actual elimina rutas como:
+- No se ejecutó el flujo de uninstall/reinstall/rollback en VM disposable.
+- No se comprobaron cambios de usuario/grupo, systemd, Docker daemon ni
+  permisos en /var/lib/docker-watch del servidor real.
+- `install.sh` aún habilita unidades systemd; una unidad legacy se bloquea
+  en lugar de migrarse automáticamente. Requiere cutover autorizado.
+- Los comandos con `--apply` **son destructivos**, nunca ejecutarlos en
+  el host real sin backup e inventario previos.
+- Una interrupción después de parar unidades puede dejar estado parcial.
+  Rollback operativo exige backup de binarios, unidades y configuración.
 
-```txt
-/opt/docker-watch
-/var/lib/docker-watch
-/var/log/docker-watch
-/etc/docker-watch
-```
-
-## Riesgo si no se hace
-
-- Borrado accidental de datos runtime.
-- Falta de dry-run o confirmación fuerte.
-- Dificultad para auditar qué se eliminó.
-- Riesgo mayor si en una fase futura se parametrizan rutas.
-
-## Ruta sugerida
-
-### Fase A — helper seguro
-
-Agregar helper Bash local, por ejemplo:
-
-```bash
-docker_safe_rm_rf() {
-  local target="${1:-}"
-  case "$target" in
-    ""|"/"|"/var"|"/var/"|"/opt"|"/opt/"|"/etc"|"/etc/")
-      echo "Refusing unsafe path: $target" >&2
-      return 64
-      ;;
-  esac
-  rm -rf -- "$target"
-}
-```
-
-Ajustar a la convención real del proyecto y evitar falsos positivos.
-
-### Fase B — modo dry-run
-
-Soportar:
+## Validación reproducible no destructiva
 
 ```bash
-DRY_RUN=true scripts/server/uninstall.sh
-```
-
-Debe imprimir acciones sin borrar.
-
-### Fase C — smoke textual y funcional
-
-Agregar test que valide:
-
-- rechaza vacío;
-- rechaza `/`;
-- rechaza `/var`, `/opt`, `/etc`;
-- solo borra rutas esperadas;
-- `PURGE_DATA=false` conserva datos;
-- `PURGE_DATA=true` borra solo allowlist.
-
-## Verificación reproducible
-
-```bash
-cd ~/dev/Pruebas/submodules/Docker
+bash -n scripts/server/install.sh
 bash -n scripts/server/uninstall.sh
-BASE_DIR=../Base bash scripts/dev/smoke.sh
-
-cd ~/dev/Pruebas
-bash scripts/quality/audit_structure.sh submodules/Docker
+bash test/shell/docker_install_policy_test.sh
+bash test/shell/docker_uninstall_safety_test.sh
+python3 -m unittest discover -s test/python -p '*installation_doctor_test.py' -v
+python3 scripts/server/installation-doctor.py --deployment
 ```
 
-## Criterio de cierre
+## Criterio PASS/FAIL y cierre
 
-- El auditor no reporta `SH_UNGUARDED_RM_RF` para `scripts/server/uninstall.sh`.
-- Existe smoke de safety.
-- El script rechaza rutas peligrosas.
-- `PURGE_DATA` queda documentado.
-- No se agregan acciones destructivas a UI/API.
+- PASS CI: lints, tests de contrato y safety pasan en el SHA candidato.
+- PASS operativo: una VM disposable verifica backup, install, runtime doctor,
+  uninstall sin purge, reinicio y rollback; la telemetría emite snapshot fresco.
+- FAIL: alguna unidad queda habilitada/huérfana después de uninstall,
+  datos borrados con purge no solicitado, config expuesta o rollback imposible.
+- Cierre: evidencia adjunta de VM con hashes de artefactos, comandos ejecutados,
+  códigos de salida, clasificación y rollback; luego validación del servidor
+  sólo con autorización independiente.

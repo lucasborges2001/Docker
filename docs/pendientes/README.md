@@ -17,8 +17,9 @@ YYYYMMDD-HHMM-<slug>.md
 | Archivo | Área | Prioridad | Estado |
 |---|---|---|---|
 | [`20260708-0000-docker-api-contracts.md`](20260708-0000-docker-api-contracts.md) | API pública/SuperAdmin | P1 | Abierto. |
-| [`20260708-0010-docker-runtime-safety.md`](20260708-0010-docker-runtime-safety.md) | Server scripts/runtime safety | P1 | Abierto. |
+| [`20260708-0010-docker-runtime-safety.md`](20260708-0010-docker-runtime-safety.md) | Server scripts/runtime safety | P1 | Implementado; pendiente VM y cutover. |
 | [`20260708-0020-docker-superadmin-product.md`](20260708-0020-docker-superadmin-product.md) | SuperAdmin/producto | P2 | Abierto. |
+| [`20261022-0000-docker-telemetry-coverage.md`](20261022-0000-docker-telemetry-coverage.md) | Métricas, historia, seguridad y runtime real | P1/P2 | Abierto: producto no verificado. |
 
 ## Criterio usado
 
