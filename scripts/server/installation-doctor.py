@@ -237,7 +237,7 @@ def main() -> int:
     parser.add_argument("--retention", action="store_true", help="estimate snapshot history coverage without reading contents")
     parser.add_argument("--interval-seconds", type=int, default=60)
     parser.add_argument("--retention-days", type=int, default=30)
-    parser.add_argument("--max-snapshots", type=int, default=10000)
+    parser.add_argument("--max-snapshots", type=int, default=50000)
     parser.add_argument("--max-bytes", type=int, default=268435456)
     parser.add_argument("--report-bytes", type=int, default=None, help="override observed report+summary size for planning")
     parser.add_argument("--timeout", type=int, default=10, help="per-command timeout, 1..30 seconds")

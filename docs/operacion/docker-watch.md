@@ -67,7 +67,7 @@ DOCKER_TELEMETRY_INTERVAL_SECONDS=60
 DOCKER_TELEMETRY_INCLUDE_UNLABELED=false
 DOCKER_TELEMETRY_ALLOWLIST=
 DOCKER_TELEMETRY_HISTORY_RETENTION_DAYS=30
-DOCKER_TELEMETRY_HISTORY_MAX_SNAPSHOTS=10000
+DOCKER_TELEMETRY_HISTORY_MAX_SNAPSHOTS=50000
 DOCKER_TELEMETRY_HISTORY_MAX_BYTES=268435456
 DOCKER_TELEMETRY_MAX_CONTAINERS=200
 DOCKER_TELEMETRY_COMMAND_TIMEOUT_SECONDS=10
@@ -418,3 +418,26 @@ snapshots reales. Las APIs de eventos publican una proyección sanitizada;
 `events.jsonl` permanece como artefacto operativo con datos originales
 y requiere permisos de lectura restringidos. Verificar la autenticación
 en el host/reverse proxy antes de exponer APIs.
+
+### Horizonte de retención y capacidad
+
+Con un snapshot cada 60 s, 30 días requieren **43.200** muestras.
+El default de `DOCKER_TELEMETRY_HISTORY_MAX_SNAPSHOTS` ahora es 50.000,
+suficiente **por cantidad**, manteniendo el tope de
+`DOCKER_TELEMETRY_HISTORY_MAX_BYTES=268435456` (256 MiB).
+Si el tamaño real de los reportes supera la capacidad de ese tope,
+la retención efectiva será inferior a 30 días. No se promete historia
+completa ni cobertura a 200 contenedores sin estimar el tamaño del snapshot.
+
+Doctor read-only:
+
+```bash
+python3 scripts/server/installation-doctor.py --retention
+python3 scripts/server/installation-doctor.py --retention --report-bytes 8192
+```
+
+El cálculo usa cantidad, intervalo y tamaño de muestra; la estimación por
+bytes no incluye todo el overhead del filesystem ni variaciones futuras
+de tamaño. El doctor nunca lee los contenidos de `server.env` ni
+reportes. Los valores existentes en un `server.env` desplegado **no se
+reescriben** automáticamente por este cambio de defaults.

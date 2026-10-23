@@ -31,7 +31,7 @@ docker_persist_event() {
 docker_update_latest_symlink() { return 0; }
 
 docker_prune_old_reports() {
-  local dir="${1:-${DOCKER_WATCH_REPORTS_DIR:-/var/lib/docker-watch/reports}}" days="${2:-${DOCKER_TELEMETRY_HISTORY_RETENTION_DAYS:-${DOCKER_WATCH_RETENTION_DAYS:-30}}}" max_snapshots="${3:-${DOCKER_TELEMETRY_HISTORY_MAX_SNAPSHOTS:-10000}}" max_bytes="${4:-${DOCKER_TELEMETRY_HISTORY_MAX_BYTES:-268435456}}"
+  local dir="${1:-${DOCKER_WATCH_REPORTS_DIR:-/var/lib/docker-watch/reports}}" days="${2:-${DOCKER_TELEMETRY_HISTORY_RETENTION_DAYS:-${DOCKER_WATCH_RETENTION_DAYS:-30}}}" max_snapshots="${3:-${DOCKER_TELEMETRY_HISTORY_MAX_SNAPSHOTS:-50000}}" max_bytes="${4:-${DOCKER_TELEMETRY_HISTORY_MAX_BYTES:-268435456}}"
   REPORTS_DIR="$dir" RETENTION_DAYS="$days" MAX_SNAPSHOTS="$max_snapshots" MAX_BYTES="$max_bytes" python3 - <<'PY'
 import os,pathlib,re,shutil,time
 root=pathlib.Path(os.environ['REPORTS_DIR']).resolve()
@@ -40,7 +40,7 @@ def integer(name,default,minimum,maximum):
  try: value=int(os.environ.get(name,default))
  except ValueError: value=default
  return max(minimum,min(maximum,value))
-days=integer('RETENTION_DAYS',30,0,3650); maximum=integer('MAX_SNAPSHOTS',10000,1,1000000); max_bytes=integer('MAX_BYTES',268435456,1048576,1099511627776)
+days=integer('RETENTION_DAYS',30,0,3650); maximum=integer('MAX_SNAPSHOTS',50000,1,1000000); max_bytes=integer('MAX_BYTES',268435456,1048576,1099511627776)
 pattern=re.compile(r'^\d{8}T\d{6}Z$'); entries=[p for p in root.iterdir() if p.is_dir() and pattern.match(p.name)]; cutoff=time.time()-(days*86400)
 for path in entries:
  if days>0 and path.stat().st_mtime<cutoff: shutil.rmtree(path)

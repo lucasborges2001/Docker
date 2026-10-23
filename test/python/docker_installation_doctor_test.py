@@ -129,7 +129,7 @@ class DockerInstallDoctorTest(unittest.TestCase):
 
     def test_retention_doctor_detects_default_horizon_gap(self):
         invocation = [sys.executable, str(DOCTOR), "--root", str(self.root),
-                      "--retention", "--report-bytes", "4000"]
+                      "--retention", "--report-bytes", "4000", "--max-snapshots", "10000"]
         result = subprocess.run(invocation, capture_output=True, text=True)
         payload = json.loads(result.stdout)
         self.assertEqual(1, result.returncode)
