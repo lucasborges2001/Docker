@@ -35,6 +35,31 @@ bash test/shell/docker_servidor_units_test.sh
 El renderizador únicamente imprime unidades. No escribe en servidor/, no
 llama a Docker, no inicia servicios, no toca credenciales y no instala paquetes.
 
+## Paquete local fijado por SHA (sin despliegue)
+
+El ejemplo específico es `config/servidor.env.example`. No reutilizar
+`config/server.env.example` legacy ni incluir el `config/docker/server.env`
+privado en el release.
+
+Desde un checkout limpio del SHA propietario:
+
+```bash
+bash test/shell/docker_servidor_env_example_test.sh
+bash test/shell/docker_servidor_package_test.sh
+bash scripts/server/package-servidor.sh
+```
+
+Se generan `dist/servidor/docker/<SHA>/docker-servidor-<SHA>.tar.gz` y
+`docker-servidor-<SHA>.manifest.json`, con `source_sha`,
+`source_tree_sha`, `payload_paths` y `archive_sha256`. La selección
+positiva se hace a partir de blobs Git, no de directorios locales: quedan
+fuera `.env`, reportes, estado y credenciales, incluso con nombres nuevos.
+Base se resuelve como release independiente. Este comando no instala units,
+no conecta con Docker y no envía Telegram.
+
+Antes de cualquier consumo, comprobar checksum, paths, SHA aprobado, ACL de
+`dockwatch`, ubicación privada de `config/docker/server.env` y rollback.
+
 ## Gates previos al cutover
 
 1. Fijar SHAs de Base y Docker; comprobar que los binarios usan BASE_DIR
