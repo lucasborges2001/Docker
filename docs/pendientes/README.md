@@ -1,7 +1,7 @@
 # Pendientes — Docker Watch
 
 Índice de deuda **real** y validaciones pendientes, organizado para continuar por commits pequeños.
-Actualizado: 2026-10-22 (hora local). Repositorio owner: `lucasborges2001/Docker`.
+Actualizado: 2026-10-26 (hora local; reconciliación focal del piloto físico). Repositorio owner: `lucasborges2001/Docker`.
 
 ## Estado y evidencia de referencia
 
@@ -10,14 +10,15 @@ Actualizado: 2026-10-22 (hora local). Repositorio owner: `lucasborges2001/Docker
 - Última suite histórica GitHub Actions observada: `c142337621ad4327c14787a697a72f15cced718a`, SUCCESS: https://github.com/lucasborges2001/Docker/actions/runs/39875949580. **No valida el HEAD actual.**
 - Verificador offline disponible: `scripts/dev/verify-local.sh --compact` (17 grupos de checks, sin Docker ni Base). **No hay en esta auditoría una ejecución real registrada contra el checkout limpio del HEAD.**
 - Referencias de composición leídas: `Base/main=ac623f037aa1a9d1e605df5a670c426596d922ac`; en `Pruebas/main`, `Base` apunta a `60a71f0fac829990f47bcc26d13e954e56ba9c88` y `Docker` a `435f9cebe1d8d8067a32a18c64de7f31040c2986`. No actualizados.
-- El servidor y Docker Engine reales, HTTP con autenticación, instalación/uninstall y TestKit integrado **no están verificados**.
+- **Piloto físico 26/10/2026 (solo evidencia del operador):** migración y cutover Boot/Docker ejecutados sobre los releases originales; engine, telemetría, watcher y heartbeat probados puntualmente en `/home/tecnicosfivisa/servidor`. Ver `docs/operacion/servidor-layout.md`. No representa ejecución del nuevo SHA Git.
+- **Sin verificación suficiente:** HTTP autenticado/read-only, uninstall/rollback real, reboot/continuidad, VM descartable, segundo host y TestKit integrado del nuevo SHA.
 
 ## Índice de pendientes vivos
 
 | Documento | Clase | Prioridad | Gap que falta cerrar | Owner |
 |---|---|---|---|---|
 | [Contratos API y compatibilidad](20260708-0000-docker-api-contracts.md) | **KEEP_OPEN** | P1 | Inventario de consumidores, autorización y smoke HTTP/405/errores | Docker + adapters Pruebas |
-| [Instalación, uninstall y rollback](20260708-0010-docker-runtime-safety.md) | **VERIFY_ONLY / KEEP_OPEN** | P1 | Ensayo de VM disposable, fallos parciales y rollback, luego cutover autorizado | Docker / operación |
+| [Instalación, uninstall y rollback](20260708-0010-docker-runtime-safety.md) | **VERIFY_ONLY / KEEP_OPEN** | P1 | Piloto físico migrado; faltan VM descartable, fallos parciales, rollback y aceptación de futuros SHAs | Docker / operación |
 | [Aceptación SuperAdmin read-only](20260708-0020-docker-superadmin-product.md) | **VERIFY_ONLY** | P2 | Render/UI, ausencia de secretos y sesión/rol con Base/host real | Docker + Pruebas |
 | [Telemetría, tráfico, almacenamiento e historial](20261022-0000-docker-telemetry-coverage.md) | **KEEP_OPEN** | P1/P2 | Tasas parciales, volúmenes/logs/imágenes, costos, retención real y alertas | Docker |
 
@@ -29,7 +30,7 @@ Clasificaciones de Base: `KEEP_OPEN` = deuda/decisión/implementación no cerrad
 |---|---|---|---|
 | **F0 — Baseline local** | Ejecutar verificador offline en checkout limpio del SHA exacto y clasificar fallos | Identificar Docker/Base HEAD y estado Git | Evidencia de comandos, SHA, exit codes y PASS/FAIL real; sin workflow |
 | **F1 — Frontera HTTP** | Inventario consumidores + contratos de autenticación/GET/405 y sanitización | F0 válido, sin asumir servidor HTTP disponible | Tests focales; decisión versionado/compatibilidad antes de cambios breaking |
-| **F2 — Safety de despliegue** | VM descartable para instalación/uninstall, permisos, doctor, fallos parciales y rollback | F0 y autorización de VM (no servidor real) | Reporte VM, backups/rollback, pruebas de preservación de datos |
+| **F2 — Safety de despliegue** | VM descartable para instalación/uninstall, permisos, doctor, fallos parciales y rollback; no repetir cutover físico | F0 y autorización de VM (no servidor real) | Reporte VM, backups/rollback, pruebas de preservación de datos |
 | **F3 — Métricas de contadores** | Casos de falta parcial, resets y continuidad de engine | F0 + contratos de tasas | Fixtures/código focal por commits y tasas nunca engañosas |
 | **F4 — Crecimiento de almacenamiento** | Fuentes read-only para writable layer/volúmenes/logs/imágenes; sin doble conteo | F3 y auditoría de fuentes/semántica | Parsers/tests; collector opt-in solo si hay gap demostrado |
 | **F5 — Retención, capacidad y doctores** | Ensayos de cardinalidad, locks, tamaño, cuota, antigüedad y costo | F4 o muestra representativa | Horizontes medidos, alertas del doctor accionables y overhead aceptado |
@@ -64,4 +65,4 @@ bash scripts/dev/verify-local.sh --compact
 5. PASS requiere evidencia proporcional. FAIL debe permanecer abierto con reproducción, impacto, owner y siguiente prueba; no basta imprimir PASS en un script.
 6. Rollback de código = revertir commit focal y reevaluar contratos/consumidores. Rollback de servidor exige backup/operación autorizada, no se infiere del Git history.
 
-**Próxima acción concreta: F0**, ejecutar `verify-local.sh --compact` sobre el checkout real limpio de Docker y registrar resultado exact-SHA. Recién entonces elegir F1 o F3 según findings; F2 no debe realizarse fuera de una VM autorizada.
+**Próxima acción concreta: F0**, ejecutar `verify-local.sh --compact` sobre el checkout real limpio del SHA nuevo de Docker y registrar resultado exact-SHA. Después reproducir y aceptar el paquete/lock en Riegos antes de programar otro rollout. F2 continúa restringida a una VM autorizada.
