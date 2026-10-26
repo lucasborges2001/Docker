@@ -43,6 +43,17 @@ ProtectHome=read-only
 ReadWritePaths={root}/state/docker {root}/logs/docker
 UMask=0027
 """
+    cutover_hardening = """SupplementaryGroups=docker
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+"""
     commands = {
         "docker-watch.service": ("Docker Watch events", "docker-watch", ""),
         "docker-watch-telemetry.service": ("Docker container telemetry", "docker-telemetry", " --loop"),
@@ -51,18 +62,21 @@ UMask=0027
     if unit in commands:
         description, command, args = commands[unit]
         one_shot = unit == "docker-watch-heartbeat.service"
+        watcher = unit == "docker-watch.service"
         service_type = "oneshot" if one_shot else "simple"
-        restart = "" if one_shot else "Restart=always\nRestartSec=5s\n"
+        restart = "" if one_shot else ("Restart=on-failure\nRestartSec=5s\n" if watcher else "Restart=always\nRestartSec=5s\n")
+        limits = "StartLimitIntervalSec=60\nStartLimitBurst=5\n" if watcher else ""
+        hardening = cutover_hardening if (watcher or one_shot) else ""
         install = "" if one_shot else "\n[Install]\nWantedBy=multi-user.target\n"
         return (f"""[Unit]
 Description={description} (servidor layout)
 Wants=network-online.target
 After=network-online.target docker.service
-
+{limits}
 [Service]
 Type={service_type}
 ExecStart={root}/current/docker/bin/{command}{args}
-""" + common + restart + install)
+""" + common + hardening + restart + install)
     if unit == "docker-watch-heartbeat.timer":
         return """[Unit]
 Description=Run Docker Watch daily heartbeat (servidor layout)
