@@ -330,6 +330,24 @@ La actualización del gitlink y el smoke `Boot + Docker` pertenecen a una fase s
 - smokes pasan con fixtures sin daemon;
 - no hay acciones Docker por HTTP.
 
+## Estado físico posterior, 26/10/2026 (evidencia del operador)
+
+El piloto `/home/tecnicosfivisa/servidor` del host `192.168.1.90`
+**ya efectuó** el cutover Boot/Docker con los releases físicos originales.
+Docker sigue indicado por `current/docker` en
+`2927279f2368cc49705669cfa2b01ee862df012e`; no hay evidencia de
+ejecución de los commits posteriores del renderer. El watcher y la
+telemetría estaban activos; el heartbeat ejecutó correctamente y quedó
+programado por timer a las 09:05 (hora -03). Detalle, seguridad de
+`dockwatch`, checksum original y límites: [layout de servidor](servidor-layout.md).
+
+El texto sobre `/opt/docker-watch` que sigue describe **el diagnóstico
+histórico previo al cutover**, no el estado actual del piloto. El modo
+`--runtime` del doctor legado también debe interpretarse según el layout
+para el que fue construido: no se debe sustituir un smoke del release de
+`~/servidor/` por un PASS contra `/opt`. Reboot, rollout del nuevo SHA,
+publicación read-only, rollback real y otro host siguen sin aceptación.
+
 ## Instalación legacy y cutover seguro (2026-10)
 
 Doctor read-only:
