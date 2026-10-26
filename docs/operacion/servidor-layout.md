@@ -1,8 +1,15 @@
 # Docker Watch: despliegue compartido en ~/servidor/
 
-Estado: **preparación de integración**, sin instalación ni cutover autorizado.
-scripts/server/install.sh conserva su política de /opt y su bloqueo de .env y
-unidades legacy. No se ha relajado ninguna protección.
+Estado del piloto físico (evidencia aportada por el operador el **26/10/2026**):
+**Boot y Docker migrados y con cutover ejecutado** en
+`/home/tecnicosfivisa/servidor` del host `192.168.1.90`.
+Es una fotografía fechada, **no** una inspección del host por este documento
+ni una aprobación para instalar el siguiente SHA. La fuente versionada
+puede evolucionar sin que cambie el release activo.
+
+`scripts/server/install.sh` mantiene la política legacy de `/opt` y sus
+bloqueos. El layout nuevo se empaqueta y renderiza separadamente; este
+documento no autoriza ni ejecuta instalaciones.
 
 ## Objetivo y ownership
 
@@ -59,6 +66,48 @@ no conecta con Docker y no envía Telegram.
 
 Antes de cualquier consumo, comprobar checksum, paths, SHA aprobado, ACL de
 `dockwatch`, ubicación privada de `config/docker/server.env` y rollback.
+
+## Evidencia del cutover del 26/10/2026 (no extrapolable a futuros SHAs)
+
+Fuente: salidas de terminal del operador; **no** ejecución propia desde este
+checkout. En ese instante:
+
+- Base `01969a16705dbb801868da2ca5e1594fcea2fe92`, referenciado por
+  `current/base`, y Docker `2927279f2368cc49705669cfa2b01ee862df012e`,
+  referenciado por `current/docker`.
+- Artefacto Docker original: SHA-256
+  `9fa2dbd8611635c14d048ded5f5ec25dbabe9888a91d3dfc3bc32f1110aac93f`,
+  con 15 archivos; **no** es el checksum de los commits posteriores.
+- Watcher `docker-watch.service` activo como `dockwatch`; telemetría
+  `docker-watch-telemetry.service` activa y produciendo snapshots en
+  `state/docker/reports/`; heartbeat bajo timer diario `09:05 -03`.
+  La ejecución explícita de heartbeat finalizó `Result=success` y
+  `ExecMainStatus=0` el 26/10 a las 12:59:36 -03.
+- `dockwatch` pertenece al grupo `docker`, con acceso al Engine 29.5.2.
+  **Ese grupo tiene privilegios equivalentes a root**: no dar ese acceso a
+  PHP ni agregar miembros automáticamente.
+- `config/docker/server.env` es `root`/`0600`; en la muestra
+  `SEND_TELEGRAM=false`. No registrar ni importar su contenido privado.
+- Smoke de telemetría: `schema_version=2`, `owner=dockwatch`,
+  `severity=ok`, sin errores, engine accesible; 16 contenedores totales
+  y 9 monitoreados **solo en esa muestra**.
+- Operador registró `DOCKER_CUTOVER_PASS`, cuatro unidades principales
+  activas (incluido `boot-report.timer`) y cero unidades fallidas
+  en la consulta puntual. Backup legacy:
+  `~/servidor/manifests/docker-cutover-20261026T155639Z/`.
+
+Las unidades activas se registraron en `/etc/systemd/system/` y se deben
+administrar como archivos controlados por root. Los archivos renderizados
+bajo `servidor/systemd/` son **staging**, no targets para `systemctl link`
+a rutas modificables del HOME. El collector, releases, estado y logs siguen
+bajo `~/servidor/` (no es un repositorio Git).
+
+**No demostrado:** reboot, estabilidad indefinida, publicación HTTP
+autenticada/read-only, Telegram efectivo, otro host, rollback real de
+unidades o ejecución de un SHA nuevo. Un rollout posterior requiere paquete
+verificado, smoke opt-in, ventana autorizada, backup/plan de rollback y
+comprobación de las unidades desplegadas. El código Git no modifica
+`current/docker` por sí mismo.
 
 ## Gates previos al cutover
 
