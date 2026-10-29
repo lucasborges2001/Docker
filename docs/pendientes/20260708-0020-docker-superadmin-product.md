@@ -9,6 +9,19 @@ Owner: `Docker` (UI/read model); `Pruebas` (composición, sesión, autorización
 - El modelo contempla CPU, RAM, red, Block I/O, PIDs, estados, health, restart, Compose y snapshots históricos. `container-trend.php` existe como API pública; **no se demostró una visualización integrada de sus tasas en SuperAdmin**.
 - Las rutas internas fueron retiradas de varias respuestas y de la vista de contratos; todavía falta verificación HTTP/UI real y consumidores.
 - `.github/workflows/quality.yml` es manual-only; último CI histórico comprobado: `c1423376`, no el HEAD actual.
+- **Consumer externo Riegos (evidencia del operador, 29/10/2026):**
+  `lucasborges2001/riegos@308bfbea76d4b4e331be572bf8cdba3764a63606`
+  fija el gitlink Docker `323b9361dadcd90f6fd693821045ccf8ade8342d`,
+  proyecta un subconjunto saneado del reporte de contenedores en
+  `ServerSnapshotReader.php` y presenta tabla/modal de diagnóstico de
+  solo lectura desde su propio endpoint SuperAdmin. En un checkout local
+  limpio, `bash scripts/run_testkit.sh all` terminó `OK all`
+  (**36/36 suites, 253/253 comandos**), con fixtures del modal, sin
+  inspección de Docker daemon ni HTTP/navegador real. La capa escribible
+  y rootfs continúan opcionales y no miden volúmenes o imágenes exclusivas.
+  **No es aceptación del SuperAdmin propio de Docker, ni del host Pruebas,
+  ni de un release nuevo desplegado en servidor**. Mantener este
+  pendiente `VERIFY_ONLY` y sus gates HTTP/rol/runtime independientes.
 
 ## Gap real
 
