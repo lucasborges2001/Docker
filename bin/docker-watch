@@ -39,7 +39,8 @@ process_event_line() {
       docker_incident_open "$key" "$event"
       if [[ "$(base_env_bool SEND_TELEGRAM true)" == true ]]; then html="$(docker_render_incident_telegram_html "$event")"; set +e; response="$(base_telegram_send_html "$html")"; code=$?; set -e; [[ "$code" -ne 0 ]] && base_log_warn "Telegram incident send failed: $(base_telegram_parse_error_description "$response" 2>/dev/null || echo unknown)"; fi
       ;;
-    "health_status: healthy"|healthy|start) docker_incident_close_silent "${key%:healthy}:unhealthy" || true;;
+    "health_status: healthy"|healthy) docker_incident_close_silent "${key%:healthy}:unhealthy" || true;;
+    start) if ! docker_incident_resolve_on_start "$event"; then base_log_warn "Docker incident archival failed"; fi;;
   esac
 }
 base_log_info "Docker watcher started"

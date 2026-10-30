@@ -63,6 +63,7 @@ run_check php_syntax php_syntax
 run_check bash_syntax bash_syntax
 run_check python_syntax python_syntax
 run_check docker_actor_id bash test/shell/docker_event_actor_id_test.sh
+run_check docker_incident_recovery bash test/shell/docker_incident_recovery_test.sh
 run_check telemetry_fixture bash test/shell/docker_telemetry_collector_test.sh
 run_check degraded_status bash test/shell/docker_status_degraded_test.sh
 run_check counter_rates php test/php/DockerCounterRateTest.php
