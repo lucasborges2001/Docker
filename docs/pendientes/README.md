@@ -13,6 +13,8 @@ Actualizado: 2026-10-26 (hora local; reconciliación focal del piloto físico). 
 - **Piloto físico 26/10/2026 (solo evidencia del operador):** migración y cutover Boot/Docker ejecutados sobre los releases originales; engine, telemetría, watcher y heartbeat probados puntualmente en `/home/tecnicosfivisa/servidor`. Ver `docs/operacion/servidor-layout.md`. No representa ejecución del nuevo SHA Git.
 - **Sin verificación suficiente:** HTTP autenticado/read-only, uninstall/rollback real, reboot/continuidad, VM descartable, segundo host y TestKit integrado del nuevo SHA.
 
+**Ciclo de vida de incidentes Docker (30/10/2026):** la evidencia del piloto confirmó dos `die` persistidos pese a recuperación de la misma instancia. Normalización `Actor.ID` y cierre `die/unhealthy → start` implementados en `Docker/main@bfd70c21`, con pruebas focales PASS, **sin suite completa ni despliegue**. Ver [pendiente de aceptación y reconciliación](20261030-0000-docker-die-incident-recovery.md). No modificar los dos incidentes productivos sin autorización operacional separada.
+
 ## Índice de pendientes vivos
 
 | Documento | Clase | Prioridad | Gap que falta cerrar | Owner |
