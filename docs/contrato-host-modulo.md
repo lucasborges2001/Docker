@@ -108,6 +108,7 @@ public_html/api/history.php
 public_html/api/events.php
 public_html/api/resources.php
 public_html/api/container.php?container_ref=<ref>
+public_html/api/container-trend.php?container_ref=<ref>&limit=20
 ```
 
 SuperAdmin:
@@ -129,6 +130,8 @@ Invariantes HTTP:
 - `Cache-Control: no-store`;
 - degradación explícita si no hay snapshot;
 - no se acepta un comando Docker por query, body o header.
+
+**Límite del contrato:** el guard GET/405 y las cabeceras implementadas en Docker no autentican ni autorizan. La sesión/rol, reverse proxy y alcance de exposición son responsabilidad de la composición host/servidor y requieren smoke HTTP real. `container-trend` entrega tasas calculadas con muestras comparables; una tasa `null` no implica tráfico cero. No forzar un envelope nuevo sobre consumidores v1 sin versionado.
 
 ## Sanitización
 
@@ -172,6 +175,10 @@ docker rmi
 docker system prune
 docker compose down
 ```
+
+## Estado de revisión (2026-11-02)
+
+En lectura estática de `Docker/main@494a8b54851105d11b267359cd0de2c27b5197d2` se observaron `public_html/api/_common.php`, `container-trend.php`, normalización de snapshot v2 y vista read-only. La presencia de código **no** demuestra aceptación de contratos en `Pruebas`, autorización HTTP ni un SHA desplegado. Los gitlinks del host y los consumidores no se reinspeccionaron en esta revisión.
 
 ## Integración pendiente en `Pruebas`
 
