@@ -16,16 +16,20 @@ Documentación operativa y técnica del submódulo `Docker`.
 | [`cambios/`](cambios/) | Cambios documentales aplicados. |
 | [`pendientes/`](pendientes/) | Pendientes vivos ordenados por prioridad y criterio de cierre. |
 
-## Estado actual
+## Estado del código y validación (revisión estática 2026-11-02)
 
-| Área | Estado | Observación |
+Baseline inspeccionado: `Docker/main@494a8b54851105d11b267359cd0de2c27b5197d2`. Esta tabla describe capacidades **presentes en código**, no aceptación HTTP, despliegue ni ejecución de tests sobre el HEAD.
+
+| Área | Implementación observada | Validación que sigue pendiente |
 |---|---|---|
-| Runtime watcher | Operable con dependencia de `Base`. | Usa shell helpers de `Base` y lógica específica de Docker. |
-| Heartbeat | Operable. | Genera snapshot, summary y evento de heartbeat. |
-| APIs públicas | Read-only, pero débiles a nivel contrato HTTP. | Falta `_common.php`, guardas de método y shape JSON más explícito. |
-| SuperAdmin | Vista compacta read-only. | Falta documentación local en raíz de `public_html/superadmin` y hardening de endpoints. |
-| Documentación estructural | Cubierta por este paquete. | Se agregan los documentos requeridos por `audit_structure`. |
-| Seguridad de uninstall | Pendiente. | Hay `rm -rf` sobre rutas absolutas que requiere guardas explícitas. |
+| Watcher, heartbeat e incidentes | CLI y persistencia presentes; recuperación `die → start` con archivado `*.resolved`. | Verificador completo, concurrencia, retención, daemon real y aceptación de incidentes históricos. |
+| Telemetría e historial | Snapshot v2, tasas y almacenamiento opcional de capa escribible. | Resets/ausencia parcial, identidad de engine, volúmenes/logs/imágenes, costo y retención real. |
+| APIs públicas | `public_html/api/_common.php` impone GET/405, cabeceras JSON y `no-store`. | Autorización externa, compatibilidad de consumidores y smoke HTTP real. |
+| SuperAdmin | Página, endpoints read-only y `public_html/superadmin/dockerFront.md` presentes. | Renderizado v1/v2/degradado, sesión/rol y navegación integrados con host. |
+| Instalación y uninstall | Preflight, allowlist de rutas, rechazo de symlinks, dry-run por defecto y confirmaciones para borrar. | Fallos parciales, instalación/uninstall/reinstalación y rollback en VM descartable. |
+| Validación local | `scripts/dev/verify-local.sh --compact` define 20 grupos de checks offline; CI es manual-only. | Ejecutarlos en checkout limpio y registrar SHA, exit codes y resultados. |
+
+El índice [`pendientes/README.md`](pendientes/README.md) detalla deuda viva, avances, riesgos y criterios de cierre. No eliminar un pendiente por la mera presencia de implementación.
 
 ## Regla de operación
 
