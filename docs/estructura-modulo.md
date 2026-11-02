@@ -12,14 +12,15 @@ Su responsabilidad es leer eventos y snapshots, normalizar estado, persistir evi
 |---|---|---|
 | CLI watcher | `bin/docker-watch` | Escucha eventos Docker, filtra por label, registra eventos e incidentes y envía alertas si corresponde. |
 | CLI heartbeat | `bin/docker-heartbeat` | Construye snapshot periódico, summary, historial y evento heartbeat. |
+| CLI telemetría | `bin/docker-telemetry` | Recopila recursos del engine/containers y genera snapshots v2 con degradación explícita. |
 | Shell específico | `lib/shell/` | Lógica Docker: collect, events, incident, render, persist y heartbeat. |
 | Bootstrap PHP | `back/bootstrap.php` | Resuelve `Base`, carga dependencias reutilizables y clases propias. |
 | Contratos PHP | `back/support/` | Constantes, rutas efectivas y configuración derivada de env. |
 | Métricas PHP | `back/metrics/` | Lectura, normalización, historia, eventos y estado para API/UI. |
 | Telegram PHP | `back/telegram/` | Formato específico para mensajes Docker. |
-| API pública | `public_html/api/` | Endpoints read-only de health, latest, history y events. |
+| API pública | `public_html/api/` | Endpoints read-only de health, latest, history, events, resources, container y container-trend; guard común GET/405. |
 | SuperAdmin | `public_html/superadmin/` | Vista HTML read-only para estado, métricas, eventos, history y contratos. |
-| Tests | `test/php`, `test/shell` | Smokes unitarios/contractuales sobre normalización, status y heartbeat. |
+| Tests | `test/php`, `test/shell`, `test/python` | Fixtures y pruebas contractuales de telemetría, persistencia, seguridad, instalación e incidentes. |
 | Fixtures runtime | `var/sample-reports/` | Reportes de muestra para APIs/UI/tests cuando no existe runtime real. |
 
 ## Entrypoints verificados
@@ -27,6 +28,7 @@ Su responsabilidad es leer eventos y snapshots, normalizar estado, persistir evi
 ```txt
 bin/docker-watch
 bin/docker-heartbeat
+bin/docker-telemetry
 bin/docker-watch-test
 ```
 
@@ -128,16 +130,19 @@ Cada línea debe ser JSON independiente y legible por `DockerEventReader`.
 - Borrado de volúmenes/datos por endpoint web.
 - Mutación de infraestructura desde endpoints públicos.
 
-## Hallazgos estructurales vigentes
+## Reconciliación de hallazgos históricos (2026-11-02)
 
-| Prioridad | Hallazgo | Estado |
-|---|---|---|
-| Alta | Faltaban documentos requeridos por auditor: estructura, contrato host y checklist. | Cubierto por este paquete. |
-| Alta | APIs sin guarda HTTP explícita y sin `_common.php`. | Pendiente técnico. |
-| Alta | `scripts/server/uninstall.sh` usa `rm -rf` sobre rutas absolutas sin helper de validación. | Pendiente técnico. |
-| Media | Falta header `@file/@brief` en PHP/JS relevantes. | Pendiente técnico mecánico. |
-| Media | SuperAdmin tiene wrappers compactos y sin contrato documental local. | Pendiente técnico/documental. |
-| Baja | `back/bootstrap.php` carga `require_once` después de declarar funciones. | Pendiente de refactor controlado o allowlist justificada. |
+Lectura estática de `Docker/main@494a8b54851105d11b267359cd0de2c27b5197d2`; **no** hubo pruebas HTTP, instalación o revisión completa de estilo en esta pasada.
+
+| Hallazgo anterior | Estado documentado ahora |
+|---|---|
+| Estructura, contrato y checklist faltantes | Presentes en `docs/`; cualquier aceptación por auditor del host requiere ejecución separada. |
+| Falta de guardas HTTP y de `_common.php` | **Implementado en código** (`public_html/api/_common.php` y `public_html/superadmin/support/api.php`); quedan autorización, compatibilidad y smoke HTTP. |
+| Uninstall con borrado absoluto sin protección | **Guardas implementadas**: allowlist de rutas, bloqueo de symlinks, dry-run y confirmación diferenciada para purge. Falta verificar install/uninstall/rollback real en VM. |
+| SuperAdmin sin documentación local | Existe `public_html/superadmin/dockerFront.md`; faltan aceptación de UI y seguridad integrada. |
+| Headers `@file/@brief` y orden de `require_once` en bootstrap | Hallazgos de auditoría histórica **no revalidados** como deuda funcional; comprobar regla aplicable y efecto real antes de abrir trabajo mecánico. |
+
+Consultar [pendientes vivos](pendientes/README.md). No reabrir como deuda un defecto cuya corrección ya está en código, ni declarar cerrado un gate operativo sin ejecutarlo.
 
 ## Verificación reproducible
 
