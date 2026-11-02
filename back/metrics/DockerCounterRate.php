@@ -42,20 +42,27 @@ final class DockerCounterRate
         }
         $interval = $t2 - $t1;
         $result['interval_seconds'] = $interval;
+        // Individual counters may be unavailable. Keep valid rates and leave
+        // missing rates null. A reset still invalidates the entire comparison.
+        $rates = [];
         foreach (self::COUNTERS as $input => $output) {
             $p = $previous[$input] ?? null;
             $c = $current[$input] ?? null;
             if (!is_int($p) || !is_int($c) || $p < 0 || $c < 0) {
-                $result['reason'] = 'counter_missing';
-                return $result;
+                continue;
             }
             if ($c < $p) {
                 $result['reason'] = 'counter_reset';
                 return $result;
             }
+            $rates[$output] = round(($c - $p) / $interval, 4);
         }
-        foreach (self::COUNTERS as $input => $output) {
-            $result[$output] = round(($current[$input] - $previous[$input]) / $interval, 4);
+        if ($rates === []) {
+            $result['reason'] = 'counter_missing';
+            return $result;
+        }
+        foreach ($rates as $output => $rate) {
+            $result[$output] = $rate;
         }
         $oldMemory = $previous['memory_used_bytes'] ?? null;
         $newMemory = $current['memory_used_bytes'] ?? null;

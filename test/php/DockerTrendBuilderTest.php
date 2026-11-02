@@ -30,4 +30,14 @@ $rows = DockerTrendBuilder::forContainer([$t2, $t1, $t0], 'name:api', 2);
 if (count($rows) !== 2 || $rows[0]['rate'] !== null) {
     throw new RuntimeException('hidden previous sample produced a rate');
 }
+// A partial Block I/O sample must not hide usable network rates in the API trend.
+$partial = snapshot('2026-10-22T10:01:00Z', 'instance:a', 1300);
+unset($partial['containers']['items'][0]['block_read_bytes_total']);
+$rows = DockerTrendBuilder::forContainer([$partial, $t0], 'name:api', 2);
+if ($rows[0]['rate'] !== null
+    || ($rows[1]['rate']['compatible'] ?? false) !== true
+    || ($rows[1]['rate']['network_rx_bytes_per_second'] ?? null) !== 20.0
+    || $rows[1]['rate']['block_read_bytes_per_second'] !== null) {
+    throw new RuntimeException('partial counters must propagate through trends: ' . json_encode($rows));
+}
 echo "DockerTrendBuilderTest OK\n";
