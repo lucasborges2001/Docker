@@ -7,6 +7,7 @@ import argparse
 import datetime as dt
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -59,7 +60,7 @@ def parse_datetime(value: Any) -> dt.datetime | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=dt.timezone.utc)
+        return None
     return parsed.astimezone(dt.timezone.utc)
 
 
@@ -70,17 +71,23 @@ def parse_percent(value: Any) -> float | None:
     if text in {"", "--"}:
         return None
     try:
-        return round(float(text), 4)
-    except ValueError:
+        parsed = float(text)
+    except (ValueError, OverflowError):
         return None
+    return round(parsed, 4) if math.isfinite(parsed) and parsed >= 0 else None
+
+
+MAX_MEASURED_BYTES = 2**63 - 1
 
 
 def parse_bytes(value: Any) -> int | None:
-    if value is None:
+    if type(value) is int:
+        return value if 0 <= value <= MAX_MEASURED_BYTES else None
+    if type(value) is float:
+        return int(value) if math.isfinite(value) and 0 <= value <= MAX_MEASURED_BYTES else None
+    if not isinstance(value, str):
         return None
-    if isinstance(value, (int, float)):
-        return max(0, int(value))
-    text = str(value).strip()
+    text = value.strip()
     if text in {"", "--"}:
         return None
     match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)\s*([kmgt]?i?b)?", text, re.IGNORECASE)
@@ -89,7 +96,10 @@ def parse_bytes(value: Any) -> int | None:
     number = float(match.group(1))
     unit = (match.group(2) or "b").lower()
     multiplier = BYTE_UNITS.get(unit)
-    return None if multiplier is None else max(0, int(number * multiplier))
+    if multiplier is None:
+        return None
+    total = number * multiplier
+    return int(total) if math.isfinite(total) and 0 <= total <= MAX_MEASURED_BYTES else None
 
 
 def parse_pair(value: Any) -> tuple[int | None, int | None]:
@@ -272,9 +282,12 @@ def normalize_record(record: dict[str, Any], sampled_at: dt.datetime) -> dict[st
     health_value = str(health) if health not in (None, "") else None
     has_healthcheck = isinstance(config.get("Healthcheck"), dict) or health_value is not None
     started = parse_datetime(state_obj.get("StartedAt") or record.get("started_at"))
+    # A future start cannot yield a valid uptime for this sampled instance.
+    if started is not None and started > sampled_at:
+        started = None
     uptime_seconds = None
     if started is not None and state == "running":
-        uptime_seconds = max(0, int((sampled_at - started).total_seconds()))
+        uptime_seconds = int((sampled_at - started).total_seconds())
 
     memory_used, _ = parse_pair(stats.get("MemUsage") if "MemUsage" in stats else stats.get("memory_usage"))
     configured_limit = parse_bytes(host_config.get("Memory") if "Memory" in host_config else record.get("memory_limit_bytes"))
@@ -295,16 +308,17 @@ def normalize_record(record: dict[str, Any], sampled_at: dt.datetime) -> dict[st
     block_write = block_write if block_write is not None else parse_bytes(stats.get("block_write_bytes_total"))
 
     pids_raw = stats.get("PIDs") if "PIDs" in stats else stats.get("pids")
-    try:
-        pids = None if pids_raw in (None, "", "--") else max(0, int(pids_raw))
-    except (TypeError, ValueError):
+    if type(pids_raw) is int:
+        pids = pids_raw if 0 <= pids_raw <= MAX_MEASURED_BYTES else None
+    elif isinstance(pids_raw, str) and re.fullmatch(r"[0-9]+", pids_raw.strip()):
+        parsed_pids = int(pids_raw.strip())
+        pids = parsed_pids if parsed_pids <= MAX_MEASURED_BYTES else None
+    else:
         pids = None
 
-    restart_raw = inspect.get("RestartCount") if "RestartCount" in inspect else record.get("restart_count", 0)
-    try:
-        restart_count = max(0, int(restart_raw or 0))
-    except (TypeError, ValueError):
-        restart_count = 0
+    restart_raw = inspect.get("RestartCount") if "RestartCount" in inspect else record.get("restart_count")
+    restart_count = (restart_raw if type(restart_raw) is int
+                     and 0 <= restart_raw <= MAX_MEASURED_BYTES else None)
 
     writable_layer_bytes = parse_bytes(inspect.get("SizeRw") if "SizeRw" in inspect else record.get("writable_layer_bytes"))
     rootfs_bytes = parse_bytes(inspect.get("SizeRootFs") if "SizeRootFs" in inspect else record.get("rootfs_bytes"))

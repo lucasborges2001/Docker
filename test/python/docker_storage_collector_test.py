@@ -50,5 +50,52 @@ class DockerStorageCollectorTest(unittest.TestCase):
             self.assertEqual(0, len(disabled["errors"]))
 
 
+    def test_invalid_or_missing_counters_do_not_become_zero(self):
+        collector = load_collector()
+        import datetime as dt
+        sampled = dt.datetime(2026, 11, 3, 15, tzinfo=dt.timezone.utc)
+        record = {
+            "ps": {"ID": "demo-id", "Names": "demo"},
+            "inspect": {"Id": "demo-id", "Name": "/demo",
+                        "State": {"Status": "running",
+                                  "StartedAt": (sampled + dt.timedelta(minutes=3)).isoformat()}},
+            "stats": {"CPUPerc": "NaN", "MemUsage": "-1B / 1GiB", "PIDs": "-4",
+                      "NetIO": "0B / 0B", "BlockIO": "0B / 0B"},
+        }
+        normalized = collector.normalize_record(record, sampled)
+        for field in ("cpu_percent", "memory_used_bytes", "pids",
+                      "restart_count", "started_at", "uptime_seconds"):
+            self.assertIsNone(normalized[field], field)
+        self.assertEqual(normalized["network_rx_bytes_total"], 0)
+        self.assertEqual(normalized["block_write_bytes_total"], 0)
+        for value in (-1, float("inf"), float("nan"), True, 2**80, "-1B", "9999999999999999999999999B"):
+            self.assertIsNone(collector.parse_bytes(value), value)
+        self.assertIsNone(collector.parse_percent("inf"))
+        self.assertIsNone(collector.parse_percent("-1%"))
+        self.assertIsNone(collector.parse_datetime("2026-11-03T15:00:00"))
+        self.assertEqual(collector.parse_percent("250.4%"), 250.4)
+
+    def test_observed_zero_and_running_uptime_are_preserved(self):
+        collector = load_collector()
+        import datetime as dt
+        sampled = dt.datetime(2026, 11, 3, 15, tzinfo=dt.timezone.utc)
+        record = {
+            "ps": {"ID": "demo-id", "Names": "demo"},
+            "inspect": {"Id": "demo-id", "Name": "/demo", "RestartCount": 0,
+                        "State": {"Status": "running",
+                                  "StartedAt": (sampled - dt.timedelta(hours=1)).isoformat()}},
+            "stats": {"CPUPerc": "250.4%", "MemUsage": "0B / 1GiB",
+                      "PIDs": "0", "NetIO": "0B / 1024B"},
+        }
+        normalized = collector.normalize_record(record, sampled)
+        self.assertEqual(normalized["cpu_percent"], 250.4)
+        self.assertEqual(normalized["restart_count"], 0)
+        self.assertEqual(normalized["pids"], 0)
+        self.assertEqual(normalized["memory_used_bytes"], 0)
+        self.assertEqual(normalized["uptime_seconds"], 3600)
+        self.assertEqual(normalized["network_rx_bytes_total"], 0)
+        self.assertEqual(normalized["network_tx_bytes_total"], 1024)
+
+
 if __name__ == "__main__":
     unittest.main()
