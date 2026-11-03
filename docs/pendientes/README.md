@@ -22,10 +22,12 @@ Actualizado: 2026-11-02 (revisión documental y estática del código en `main`)
 | [Contratos API y compatibilidad](20260708-0000-docker-api-contracts.md) | **KEEP_OPEN** | P1 | Inventario de consumidores, autorización y smoke HTTP/405/errores | Docker + adapters Pruebas |
 | [Instalación, uninstall y rollback](20260708-0010-docker-runtime-safety.md) | **VERIFY_ONLY / KEEP_OPEN** | P1 | Piloto físico migrado; faltan VM descartable, fallos parciales, rollback y aceptación de futuros SHAs | Docker / operación |
 | [Aceptación SuperAdmin read-only](20260708-0020-docker-superadmin-product.md) | **VERIFY_ONLY** | P2 | Render/UI, ausencia de secretos y sesión/rol con Base/host real | Docker + Pruebas |
-| [Telemetría, tráfico, almacenamiento e historial](20261022-0000-docker-telemetry-coverage.md) | **KEEP_OPEN** | P1/P2 | Tasas parciales, volúmenes/logs/imágenes, costos, retención real y alertas | Docker |
+| [Telemetría, tráfico, almacenamiento e historial](20261022-0000-docker-telemetry-coverage.md) | **KEEP_OPEN** | P1/P2 | Ausencia parcial corregida en cálculo focal; faltan resets/gaps reales, consumidores, volúmenes/logs/imágenes, retención y alertas | Docker |
 | [Recuperación de incidentes `die → start`](20261030-0000-docker-die-incident-recovery.md) | **IMPLEMENTADO / VERIFY_ONLY** | P1 | Validación de SHA completo, retención/concurrencia, deploy y reconciliación operativa de incidentes históricos | Docker / operación |
 
 Clasificaciones operativas: `KEEP_OPEN` = deuda/decisión/implementación no cerrada; `VERIFY_ONLY` = implementación existente que todavía requiere evidencia. `IMPLEMENTADO / VERIFY_ONLY` no equivale a aceptado en producción. No cerrar ni eliminar un pendiente sin verificar todos sus criterios de cierre; conservar el historial en `docs/cambios` o en el commit que documente el cierre.
+
+**Avance T1 (02/11/2026):** [`785a138`](https://github.com/lucasborges2001/Docker/commit/785a13897c648db7208c0c1bacd37cef8e407f18) incorpora tasas independientes ante contadores ausentes y pruebas focales PHP. Se comprobó RED→PASS contra blobs originales verificados; no hubo checkout completo por bloqueo DNS, por lo que **F0 sigue pendiente**. Ver [evidencia y contrato](20261022-0000-docker-telemetry-coverage.md). La semántica `compatible=true` para comparaciones parcialmente válidas aún requiere revisión de consumidores.
 
 ## Orden recomendado para las siguientes iteraciones
 
