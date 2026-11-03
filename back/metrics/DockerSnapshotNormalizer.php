@@ -71,7 +71,7 @@ final class DockerSnapshotNormalizer implements MetricSnapshotNormalizer
             'state'=>(string)($raw['state'] ?? 'unknown'),'health'=>$this->nullableString($raw['health'] ?? null),'has_healthcheck'=>(bool)($raw['has_healthcheck'] ?? false),'status'=>(string)($raw['status'] ?? ''),
             'cpu_percent'=>$this->nullableFloat($raw['cpu_percent'] ?? null),'memory_used_bytes'=>$this->nullableInteger($raw['memory_used_bytes'] ?? null),'memory_limit_bytes'=>$this->nullableInteger($raw['memory_limit_bytes'] ?? null),'memory_percent'=>$this->nullableFloat($raw['memory_percent'] ?? null),
             'network_rx_bytes_total'=>$this->nullableInteger($raw['network_rx_bytes_total'] ?? null),'network_tx_bytes_total'=>$this->nullableInteger($raw['network_tx_bytes_total'] ?? null),'block_read_bytes_total'=>$this->nullableInteger($raw['block_read_bytes_total'] ?? null),'block_write_bytes_total'=>$this->nullableInteger($raw['block_write_bytes_total'] ?? null),'writable_layer_bytes'=>$this->nullableInteger($raw['writable_layer_bytes'] ?? null),'rootfs_bytes'=>$this->nullableInteger($raw['rootfs_bytes'] ?? null),
-            'pids'=>$this->nullableInteger($raw['pids'] ?? null),'restart_count'=>max(0,(int)($raw['restart_count'] ?? 0)),'started_at'=>$this->nullableString($raw['started_at'] ?? null),'uptime_seconds'=>$this->nullableInteger($raw['uptime_seconds'] ?? null),'sampled_at'=>$this->nullableString($raw['sampled_at'] ?? null),
+            'pids'=>$this->nullableInteger($raw['pids'] ?? null),'restart_count'=>$this->nullableInteger($raw['restart_count'] ?? null),'started_at'=>$this->nullableString($raw['started_at'] ?? null),'uptime_seconds'=>$this->nullableInteger($raw['uptime_seconds'] ?? null),'sampled_at'=>$this->nullableString($raw['sampled_at'] ?? null),
         ];
     }
 
@@ -102,6 +102,13 @@ final class DockerSnapshotNormalizer implements MetricSnapshotNormalizer
     }
 
     private function nullableString($value): ?string { return $value===null||$value===''?null:(string)$value; }
-    private function nullableInteger($value): ?int { return $value===null||$value===''?null:max(0,(int)$value); }
-    private function nullableFloat($value): ?float { return $value===null||$value===''?null:(float)$value; }
+    private function nullableInteger($value): ?int
+    {
+        return is_int($value) && $value >= 0 ? $value : null;
+    }
+    private function nullableFloat($value): ?float
+    {
+        return (is_int($value) || is_float($value)) && is_finite((float)$value) && $value >= 0
+            ? (float)$value : null;
+    }
 }
